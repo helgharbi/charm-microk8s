@@ -335,12 +335,11 @@ class MicroK8sCluster(Object):
         self.model.unit.status = MaintenanceStatus("joining the microk8s cluster")
         url = event.join_url
         logger.debug("Using join URL: {}".format(url))
-        join_as_worker = self.model.config.get("worker", False)
         try:
             join_cmd = ["/snap/bin/microk8s", "join", url]
             if self.model.config.get("skip_verify"):
                 join_cmd += ["--skip-verify"]
-            if join_as_worker:
+            if self.model.config.get("worker"):
                 logger.info("Joining as worker node")
                 join_cmd += ["--worker"]
             subprocess.check_call(join_cmd)
