@@ -8,6 +8,10 @@ options:
     description: A space-separated list of addons that should be enabled.
     type: string
     default: dns ingress
+  worker:
+    description: Whether it is deployed as a worker-only node
+    type: boolean
+    default: false
   containerd_env:
     description: >
       Contents of the containerd-env file.
