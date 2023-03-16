@@ -26,6 +26,7 @@ from utils import (
     microk8s_ready,
     open_port,
     retry_until_zero_rc,
+    ensure_file_contents,
 )
 
 logger = logging.getLogger(__name__)
@@ -137,6 +138,7 @@ class MicroK8sCluster(Object):
 
         self.framework.observe(charm.on.install, self._on_install)
         self.framework.observe(charm.on.config_changed, self._containerd_env)
+        self.framework.observe(charm.on.config_changed, self._containerd_mirrors)
         self.framework.observe(charm.on.config_changed, self._coredns_config)
         self.framework.observe(charm.on.config_changed, self._ingress_ports)
         self.framework.observe(charm.on.config_changed, self._manage_addons)
@@ -246,6 +248,27 @@ class MicroK8sCluster(Object):
         with open(CONTAINERD_ENV_SNAP_PATH, "w") as env:
             env.write(configured)
         subprocess.check_call(["systemctl", "restart", "snap.microk8s.daemon-containerd.service"])
+
+    def _containerd_mirrors(self, _):
+        changed = False
+        mirrors_string = self.model.config["containerd_registry_mirrors"]
+        try:
+            mirrors = json.loads(mirrors_string)
+            for registry, mirror in mirrors.items():
+                path = "/var/snap/microk8s/current/args/certs.d/{}/hosts.toml".format(registry)
+                contents = """
+server = "{}"
+[host."{}"]
+capabilities = ["pull", "resolve"]
+""".format(registry, mirror)
+                changed = changed or ensure_file_contents(path, contents)
+        except Exception as e:
+            logger.exception("failed to configure registry mirror")
+            return
+        
+        if changed:
+            subprocess.check_call(["systemctl", "restart", "snap.microk8s.daemon-containerd.service"])
+
 
     def _refresh_channel(self, _):
         channel = self.model.config["channel"]

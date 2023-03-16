@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import pathlib
 import subprocess
 from time import sleep
 
@@ -128,3 +129,18 @@ def check_kubernetes_version_is_older(current: str, new: str):
         return current_version > new_version
     except (TypeError, ValueError):
         return False
+
+
+def ensure_file_contents(path: str, contents: str):
+    """
+    Create file at path with the specified contents. Make any directories
+    that are required. Returns True if the file was changed, False otherwise.
+    """
+    p = pathlib.Path(path)
+    if p.exists() and p.read_text() == contents:
+        return False
+
+    os.makedirs(p.absolute().parent)
+
+    p.write_text(contents)
+    return True

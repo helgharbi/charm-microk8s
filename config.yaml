@@ -23,7 +23,11 @@ options:
       # HTTP_PROXY=http://squid.internal:3128
       # HTTPS_PROXY=http://squid.internal:3128
       # NO_PROXY=10.0.0.0/8,127.0.0.0/16,192.168.0.0/16
-
+  containerd_registry_mirrors:
+    description: >
+      Registry mirrors for containerd. For example, `{"docker.io": "http://my.proxy:5000"}`
+    type: string
+    default: ""
   coredns_config:
     description: The CoreDNS configuration.  If you're running on a restricted network, you may wish to change the forwaders.
     type: string
