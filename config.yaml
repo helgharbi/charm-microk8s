@@ -61,3 +61,10 @@ options:
       """
     default: ""
     type: string
+  disable_cert_reissue:
+    description: |
+      Prevent MicroK8s from automatically regenerating server certificates when the IP address
+      of the host changes. This is useful in scenarios where a bridge is configured on the host
+      and IP addresses are changed frequently.
+    default: false
+    type: boolean

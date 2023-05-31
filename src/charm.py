@@ -162,6 +162,7 @@ class MicroK8sCharm(CharmBase):
             self._on_install(None)
 
         microk8s.set_containerd_env(self.config["containerd_env"])
+        microk8s.set_cert_reissue(self.config["disable_cert_reissue"])
 
         if self._state.joined and self.unit.is_leader():
             remove_nodes = self._get_peer_data("remove_nodes", [])

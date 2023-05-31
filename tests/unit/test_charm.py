@@ -13,12 +13,20 @@ from ops.model import BlockedStatus, WaitingStatus
 
 @pytest.mark.parametrize("role", ["worker", "control-plane", ""])
 def test_install_channel(role, e: Environment):
-    e.harness.update_config({"role": role, "channel": "fakechannel", "containerd_env": "fakeenv"})
+    e.harness.update_config(
+        {
+            "role": role,
+            "channel": "fakechannel",
+            "containerd_env": "fakeenv",
+            "disable_cert_reissue": False,
+        }
+    )
     e.harness.begin_with_initial_hooks()
 
     e.util.install_required_packages.assert_called_once()
     e.microk8s.install.assert_called_once_with("fakechannel")
     e.microk8s.set_containerd_env.assert_called_once_with("fakeenv")
+    e.microk8s.set_cert_reissue.assert_called_once_with(False)
 
 
 @pytest.mark.parametrize(
@@ -112,3 +120,18 @@ def test_config_containerd_env(e: Environment, role: str, is_leader: bool):
 
     e.harness.update_config({"containerd_env": "fakeenv2"})
     e.microk8s.set_containerd_env.assert_called_once_with("fakeenv2")
+
+
+@pytest.mark.parametrize("role", ["", "control-plane", "worker"])
+@pytest.mark.parametrize("is_leader", [True, False])
+def test_config_disable_cert_reissue(e: Environment, role: str, is_leader: bool):
+    e.microk8s.get_unit_status.return_value = ops.model.ActiveStatus("fakestatus")
+
+    e.harness.update_config({"role": role, "addons": "", "disable_cert_reissue": False})
+    e.harness.set_leader(is_leader)
+    e.harness.begin_with_initial_hooks()
+
+    e.microk8s.set_cert_reissue.assert_called_with(False)
+
+    e.harness.update_config({"disable_cert_reissue": True})
+    e.microk8s.set_cert_reissue.assert_called_with(True)

@@ -1,6 +1,7 @@
 #
 # Copyright 2023 Canonical, Ltd.
 #
+from pathlib import Path
 from unittest import mock
 
 import pytest
@@ -185,13 +186,19 @@ def test_microk8s_get_unit_status(check_output: mock.MagicMock, message: str, ex
     assert status == expect_status
 
 
+@mock.patch("microk8s.snap_data_dir")
 @mock.patch("util.ensure_file", autospec=True)
 @mock.patch("util.check_call", autospec=True)
 @pytest.mark.parametrize("changed", (True, False))
 def test_microk8s_set_containerd_env(
-    check_call: mock.MagicMock, ensure_file: mock.MagicMock, changed: bool
+    check_call: mock.MagicMock,
+    ensure_file: mock.MagicMock,
+    snap_data_dir: mock.MagicMock,
+    changed: bool,
+    tmp_path: Path,
 ):
     ensure_file.return_value = changed
+    snap_data_dir.return_value = tmp_path
 
     # no change when empty
     microk8s.set_containerd_env("")
@@ -200,10 +207,32 @@ def test_microk8s_set_containerd_env(
 
     # change config and restart service if something changed
     microk8s.set_containerd_env("fake")
-    ensure_file.assert_called_once_with(
-        microk8s.SNAP_DATA / "args" / "containerd_env", "fake", 0o600, 0, 0
-    )
+    ensure_file.assert_called_once_with(tmp_path / "args" / "containerd_env", "fake", 0o600, 0, 0)
     if changed:
         check_call.assert_called_once_with(["snap", "restart", "microk8s.daemon-containerd"])
     else:
         check_call.assert_not_called()
+
+
+@mock.patch("microk8s.snap_data_dir")
+@mock.patch("os.chown")
+@mock.patch("os.chmod")
+def test_microk8s_set_cert_reissue(
+    chmod: mock.MagicMock, chown: mock.MagicMock, snap_data_dir: mock.MagicMock, tmp_path: Path
+):
+    snap_data_dir.return_value = tmp_path
+
+    # disable cert reissue, ensure lock file exists
+    microk8s.set_cert_reissue(disable=False)
+    chown.assert_called_once_with(tmp_path / "var" / "lock" / "no-cert-reissue", 0, 0)
+    chmod.assert_called_once_with(tmp_path / "var" / "lock" / "no-cert-reissue", 0o600)
+    assert (tmp_path / "var" / "lock" / "no-cert-reissue").exists()
+
+    microk8s.set_cert_reissue(disable=False)
+    assert (tmp_path / "var" / "lock" / "no-cert-reissue").exists(), "lock file must exist"
+
+    microk8s.set_cert_reissue(disable=True)
+    assert not (tmp_path / "var" / "lock" / "no-cert-reissue").exists(), "lock file not removed"
+
+    microk8s.set_cert_reissue(disable=True)
+    assert not (tmp_path / "var" / "lock" / "no-cert-reissue").exists(), "lock file not removed"

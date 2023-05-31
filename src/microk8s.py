@@ -15,9 +15,16 @@ import util
 LOG = logging.getLogger(__name__)
 
 
-SNAP = Path("/snap/microk8s/current")
-SNAP_DATA = Path("/var/snap/microk8s/current")
-SNAP_COMMON = Path("/var/snap/microk8s/common")
+def snap_dir() -> Path:
+    return Path("/snap/microk8s/current")
+
+
+def snap_data_dir() -> Path:
+    return Path("/var/snap/microk8s/current")
+
+
+def snap_common_dir() -> Path:
+    return Path("/var/snap/microk8s/common")
 
 
 def install(channel: Optional[str] = None):
@@ -72,8 +79,8 @@ def get_unit_status(hostname: str):
         # use the kubectl binary with the kubelet config directly
         output = subprocess.check_output(
             [
-                f"{SNAP}/kubectl",
-                f"--kubeconfig={SNAP_DATA}/credentials/kubelet.config",
+                f"{snap_dir()}/kubectl",
+                f"--kubeconfig={snap_data_dir()}/credentials/kubelet.config",
                 "get",
                 "node",
                 hostname,
@@ -117,6 +124,15 @@ def set_containerd_env(containerd_env: str):
         return
 
     LOG.info("Set containerd environment configuration")
-    if util.ensure_file(SNAP_DATA / "args" / "containerd_env", containerd_env, 0o600, 0, 0):
+    if util.ensure_file(snap_data_dir() / "args" / "containerd_env", containerd_env, 0o600, 0, 0):
         LOG.info("Restart containerd to apply environment configuration")
         util.check_call(["snap", "restart", "microk8s.daemon-containerd"])
+
+
+def set_cert_reissue(disable: bool):
+    """pass disable=True to disable automatic cert re-issue, False to re-enable"""
+    path = snap_data_dir() / "var" / "lock" / "no-cert-reissue"
+    if disable and path.exists():
+        path.unlink()
+    elif not disable:
+        util.ensure_file(path, "", 0o600, 0, 0)
