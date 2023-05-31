@@ -40,3 +40,24 @@ options:
       to go into error state until the change is reverted.
     default: ""
     type: string
+  containerd_env:
+    description: |
+      Environment variables for containerd process. This is useful to specify host-wide resource
+      limits on the containerd process (with ulimit) or configuring an HTTP proxy to access image
+      registries on a constrained environment.
+
+      Leave this empty to use the MicroK8s defaults.
+
+      Example:
+
+      """
+      ulimit -n 65536 || true
+      ulimit -l 16384 || true
+
+      # uncomment to configure a proxy for containerd
+      # http_proxy=http://squid.internal:3128
+      # https_proxy=http://squid.internal:3128
+      # no_proxy=127.0.0.1,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12
+      """
+    default: ""
+    type: string

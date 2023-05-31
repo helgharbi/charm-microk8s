@@ -5,6 +5,7 @@ import logging
 import os
 import shlex
 import subprocess
+from pathlib import Path
 
 LOG = logging.getLogger(__name__)
 
@@ -34,3 +35,21 @@ def install_required_packages():
             check_call(["apt-get", "install", "--yes", package])
         except subprocess.CalledProcessError:
             LOG.exception("failed to install package %s, charm may misbehave", package)
+
+
+def ensure_file(file: Path, data: str, permissions: int, uid: int, gid: int) -> bool:
+    """ensure file with specific contents, owner:group and permissions exists on disk.
+    returns `True` if file contents have changed"""
+
+    # ensure directory exists
+    file.parent.mkdir(parents=True, exist_ok=True)
+
+    changed = False
+    if not file.exists() or file.read_text() != data:
+        file.write_text(data)
+        changed = True
+
+    os.chmod(file, permissions)
+    os.chown(file, uid, gid)
+
+    return changed

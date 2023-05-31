@@ -161,6 +161,8 @@ class MicroK8sCharm(CharmBase):
         if not self._state.installed:
             self._on_install(None)
 
+        microk8s.set_containerd_env(self.config["containerd_env"])
+
         if self._state.joined and self.unit.is_leader():
             remove_nodes = self._get_peer_data("remove_nodes", [])
 

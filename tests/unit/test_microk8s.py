@@ -183,3 +183,27 @@ def test_microk8s_get_unit_status(check_output: mock.MagicMock, message: str, ex
         ]
     )
     assert status == expect_status
+
+
+@mock.patch("util.ensure_file", autospec=True)
+@mock.patch("util.check_call", autospec=True)
+@pytest.mark.parametrize("changed", (True, False))
+def test_microk8s_set_containerd_env(
+    check_call: mock.MagicMock, ensure_file: mock.MagicMock, changed: bool
+):
+    ensure_file.return_value = changed
+
+    # no change when empty
+    microk8s.set_containerd_env("")
+    ensure_file.assert_not_called()
+    check_call.assert_not_called()
+
+    # change config and restart service if something changed
+    microk8s.set_containerd_env("fake")
+    ensure_file.assert_called_once_with(
+        microk8s.SNAP_DATA / "args" / "containerd_env", "fake", 0o600, 0, 0
+    )
+    if changed:
+        check_call.assert_called_once_with(["snap", "restart", "microk8s.daemon-containerd"])
+    else:
+        check_call.assert_not_called()

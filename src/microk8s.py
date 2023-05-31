@@ -108,3 +108,15 @@ def reconcile_addons(enabled_addons: list, target_addons: list):
         if addon not in enabled_addons:
             LOG.info("Enabling addon %s", addon)
             util.check_call(["microk8s", "enable", addon])
+
+
+def set_containerd_env(containerd_env: str):
+    """update containerd environment configuration"""
+    if not containerd_env:
+        LOG.debug("No custom containerd_env set, will not change anything")
+        return
+
+    LOG.info("Set containerd environment configuration")
+    if util.ensure_file(SNAP_DATA / "args" / "containerd_env", containerd_env, 0o600, 0, 0):
+        LOG.info("Restart containerd to apply environment configuration")
+        util.check_call(["snap", "restart", "microk8s.daemon-containerd"])
