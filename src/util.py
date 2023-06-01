@@ -37,7 +37,9 @@ def install_required_packages():
             LOG.exception("failed to install package %s, charm may misbehave", package)
 
 
-def ensure_file(file: Path, data: str, permissions: int, uid: int, gid: int) -> bool:
+def ensure_file(
+    file: Path, data: str, permissions: int = None, uid: int = None, gid: int = None
+) -> bool:
     """ensure file with specific contents, owner:group and permissions exists on disk.
     returns `True` if file contents have changed"""
 
@@ -49,7 +51,10 @@ def ensure_file(file: Path, data: str, permissions: int, uid: int, gid: int) -> 
         file.write_text(data)
         changed = True
 
-    os.chmod(file, permissions)
-    os.chown(file, uid, gid)
+    if permissions is not None:
+        os.chmod(file, permissions)
+
+    if uid is not None and gid is not None:
+        os.chown(file, uid, gid)
 
     return changed
