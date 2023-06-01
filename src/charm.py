@@ -138,7 +138,7 @@ class MicroK8sCharm(CharmBase):
         util.install_required_packages()
 
         self.unit.status = MaintenanceStatus("installing MicroK8s")
-        microk8s.install(self.config["channel"])
+        microk8s.install()
         try:
             microk8s.wait_ready()
         except subprocess.CalledProcessError:
