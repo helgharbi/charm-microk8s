@@ -13,11 +13,22 @@ from ops.model import BlockedStatus, WaitingStatus
 
 @pytest.mark.parametrize("role", ["worker", "control-plane", ""])
 def test_install_channel(role, e: Environment):
-    e.harness.update_config({"role": role, "channel": "fakechannel"})
+    e.harness.update_config(
+        {
+            "role": role,
+            "channel": "fakechannel",
+            "containerd_http_proxy": "fakehttpproxy",
+            "containerd_https_proxy": "fakehttpsproxy",
+            "containerd_no_proxy": "fakenoproxy",
+        }
+    )
     e.harness.begin_with_initial_hooks()
 
     e.util.install_required_packages.assert_called_once()
     e.microk8s.install.assert_called_once_with("fakechannel")
+    e.microk8s.set_containerd_proxy_options.assert_called_once_with(
+        "fakehttpproxy", "fakehttpsproxy", "fakenoproxy"
+    )
 
 
 @pytest.mark.parametrize(
