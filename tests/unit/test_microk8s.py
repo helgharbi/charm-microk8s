@@ -223,16 +223,16 @@ def test_microk8s_set_cert_reissue(
     snap_data_dir.return_value = tmp_path
 
     # disable cert reissue, ensure lock file exists
-    microk8s.set_cert_reissue(disable=False)
+    microk8s.set_cert_reissue(disable=True)
     chown.assert_called_once_with(tmp_path / "var" / "lock" / "no-cert-reissue", 0, 0)
     chmod.assert_called_once_with(tmp_path / "var" / "lock" / "no-cert-reissue", 0o600)
     assert (tmp_path / "var" / "lock" / "no-cert-reissue").exists()
 
-    microk8s.set_cert_reissue(disable=False)
+    microk8s.set_cert_reissue(disable=True)
     assert (tmp_path / "var" / "lock" / "no-cert-reissue").exists(), "lock file must exist"
 
-    microk8s.set_cert_reissue(disable=True)
+    microk8s.set_cert_reissue(disable=False)
     assert not (tmp_path / "var" / "lock" / "no-cert-reissue").exists(), "lock file not removed"
 
-    microk8s.set_cert_reissue(disable=True)
+    microk8s.set_cert_reissue(disable=False)
     assert not (tmp_path / "var" / "lock" / "no-cert-reissue").exists(), "lock file not removed"

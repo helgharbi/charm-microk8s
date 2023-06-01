@@ -134,9 +134,9 @@ def set_cert_reissue(disable: bool):
     LOG.info("Apply cert-reissue configuration (disable=%s)", disable)
 
     path = snap_data_dir() / "var" / "lock" / "no-cert-reissue"
-    if disable and path.exists():
+    if not disable and path.exists():
         LOG.debug("Removing %s", path)
         path.unlink()
-    elif not disable:
+    elif disable:
         LOG.debug("Make sure that %s exists", path)
         util.ensure_file(path, "", 0o600, 0, 0)
