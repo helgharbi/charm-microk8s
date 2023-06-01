@@ -162,7 +162,6 @@ class MicroK8sCharm(CharmBase):
             self._on_install(None)
 
         microk8s.set_containerd_env(self.config["containerd_env"])
-        microk8s.set_cert_reissue(self.config["disable_cert_reissue"])
 
         if self._state.joined and self.unit.is_leader():
             remove_nodes = self._get_peer_data("remove_nodes", [])
@@ -193,13 +192,19 @@ class MicroK8sCharm(CharmBase):
             self._state.join_url = ""
 
         if not self._state.joined:
+            # Enable cert-reissue before joining
+            microk8s.set_cert_reissue(False)
             if not self._state.join_url:
                 self.unit.status = WaitingStatus("waiting for control plane relation")
                 return
 
             self.unit.status = MaintenanceStatus("joining cluster")
             microk8s.join(self._state.join_url, self.config["role"] == "worker")
+            microk8s.wait_ready()
             self._state.joined = True
+
+        if self._state.joined:
+            microk8s.set_cert_reissue(self.config["disable_cert_reissue"])
 
         if self.config["role"] != "worker" and self.unit.is_leader():
             enabled_addons = self._get_peer_data("enabled_addons", [])

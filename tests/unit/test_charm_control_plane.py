@@ -24,6 +24,7 @@ def test_install(e: Environment, is_leader: bool):
     if not is_leader:
         e.microk8s.reconcile_addons.assert_not_called()
         assert isinstance(e.harness.charm.unit.status, ops.model.WaitingStatus)
+        e.microk8s.set_cert_reissue.assert_called_once_with(False)
     else:
         e.microk8s.reconcile_addons.assert_called_once_with([], ["dns"])
         assert e.harness.charm.unit.status == ops.model.ActiveStatus("fakestatus")
@@ -156,18 +157,21 @@ def test_follower_retrieve_join_url(e: Environment):
     e.microk8s.get_unit_status.return_value = ops.model.ActiveStatus("fakestatus")
     e.gethostname.return_value = "fakehostname"
 
-    e.harness.update_config({"role": "control-plane"})
+    e.harness.update_config({"role": "control-plane", "disable_cert_reissue": True})
     e.harness.set_leader(False)
     e.harness.begin_with_initial_hooks()
 
     assert not e.harness.charm._state.joined
+    e.microk8s.wait_ready.reset_mock()
 
     rel_id = e.harness.charm.model.get_relation("peer").id
     e.harness.add_relation_unit(rel_id, f"{e.harness.charm.app.name}/1")
     e.harness.update_relation_data(rel_id, e.harness.charm.app.name, {"join_url": "fakejoinurl"})
 
     e.microk8s.join.assert_called_once_with("fakejoinurl", False)
+    e.microk8s.wait_ready.assert_called_once_with()
     e.microk8s.get_unit_status.assert_called_once_with("fakehostname")
+    e.microk8s.set_cert_reissue.assert_called_with(True)
 
     assert e.harness.charm.unit.status == ops.model.ActiveStatus("fakestatus")
     assert e.harness.charm._state.joined

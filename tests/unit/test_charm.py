@@ -26,7 +26,6 @@ def test_install_channel(role, e: Environment):
     e.util.install_required_packages.assert_called_once()
     e.microk8s.install.assert_called_once_with("fakechannel")
     e.microk8s.set_containerd_env.assert_called_once_with("fakeenv")
-    e.microk8s.set_cert_reissue.assert_called_once_with(False)
 
 
 @pytest.mark.parametrize(
@@ -122,16 +121,22 @@ def test_config_containerd_env(e: Environment, role: str, is_leader: bool):
     e.microk8s.set_containerd_env.assert_called_once_with("fakeenv2")
 
 
-@pytest.mark.parametrize("role", ["", "control-plane", "worker"])
-@pytest.mark.parametrize("is_leader", [True, False])
-def test_config_disable_cert_reissue(e: Environment, role: str, is_leader: bool):
+@pytest.mark.parametrize("role", ["", "control-plane"])
+@pytest.mark.parametrize("has_joined", [False, True])
+def test_config_disable_cert_reissue(e: Environment, role: str, has_joined: bool):
     e.microk8s.get_unit_status.return_value = ops.model.ActiveStatus("fakestatus")
 
     e.harness.update_config({"role": role, "addons": "", "disable_cert_reissue": False})
-    e.harness.set_leader(is_leader)
+    e.harness.set_leader(has_joined)
     e.harness.begin_with_initial_hooks()
 
-    e.microk8s.set_cert_reissue.assert_called_with(False)
+    e.microk8s.set_cert_reissue.reset_mock()
+    e.harness.charm._state.joined = has_joined
 
+    e.harness.update_config({"disable_cert_reissue": False})
     e.harness.update_config({"disable_cert_reissue": True})
-    e.microk8s.set_cert_reissue.assert_called_with(True)
+
+    if has_joined:
+        assert e.microk8s.set_cert_reissue.mock_calls == [mock.call(False), mock.call(True)]
+    else:
+        assert e.microk8s.set_cert_reissue.mock_calls == [mock.call(False), mock.call(False)]

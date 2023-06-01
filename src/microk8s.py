@@ -131,8 +131,12 @@ def set_containerd_env(containerd_env: str):
 
 def set_cert_reissue(disable: bool):
     """pass disable=True to disable automatic cert re-issue, False to re-enable"""
+    LOG.info("Apply cert-reissue configuration (disable=%s)", disable)
+
     path = snap_data_dir() / "var" / "lock" / "no-cert-reissue"
     if disable and path.exists():
+        LOG.debug("Removing %s", path)
         path.unlink()
     elif not disable:
+        LOG.debug("Make sure that %s exists", path)
         util.ensure_file(path, "", 0o600, 0, 0)
