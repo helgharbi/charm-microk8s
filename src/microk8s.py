@@ -123,3 +123,12 @@ def set_containerd_proxy_options(http_proxy: str, https_proxy: str, no_proxy: st
     if util.ensure_file(path, new_containerd_env, 0o600, 0, 0):
         LOG.info("Restart containerd to apply environment configuration")
         util.check_call(["snap", "restart", "microk8s.daemon-containerd"])
+
+
+def disable_cert_reissue():
+    """disable automatic cert reissue. this must never be done on nodes that have not yet joined"""
+    LOG.info("Disable automatic certificate reissue")
+
+    path = snap_data_dir() / "var" / "lock" / "no-cert-reissue"
+    if not path.exists():
+        util.ensure_file(path, "", 0o600, 0, 0)
