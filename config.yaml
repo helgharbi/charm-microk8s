@@ -75,3 +75,9 @@ options:
       This option is ignored and does not have any effect on multi-node clusters.
     default: true
     type: boolean
+  manage_etc_hosts:
+    description: |
+      When enabled, automatically generate entries for all unit IPs in the /etc/hosts file. Use this
+      if the substrate does not provide DNS resolution between the hosts.
+    default: false
+    type: boolean

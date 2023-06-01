@@ -10,6 +10,10 @@ from pathlib import Path
 LOG = logging.getLogger(__name__)
 
 
+def etc_hosts_file() -> Path:
+    return Path("/etc/hosts")
+
+
 def check_call(*args, **kwargs):
     """log and run command"""
     LOG.debug("Execute: %s (args=%s, kwargs=%s)", shlex.join(args[0]), args, kwargs)
@@ -78,3 +82,11 @@ def ensure_block(data: str, block: str, block_marker: str) -> str:
         return f"{data}{marker_begin}{block}{marker_end}"
 
     return f"{data[:begin_index]}{marker_begin}{block}{data[end_index:]}"
+
+
+def set_etc_hosts(entries: list):
+    """update /etc/hosts with list of managed entries"""
+    LOG.info("Updating /etc/hosts with %d entries", len(entries))
+    etc_hosts = etc_hosts_file().read_text()
+    new_etc_hosts = ensure_block(etc_hosts, "\n".join(entries), "# {mark} added by microk8s charm")
+    ensure_file(etc_hosts_file(), new_etc_hosts)

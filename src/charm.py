@@ -99,12 +99,12 @@ class MicroK8sCharm(CharmBase):
             if hostname is not None:
                 self._state.hostnames[unit.name] = hostname
 
+        self._on_config_changed(None)
+
     def _on_relation_departed(self, event: RelationDepartedEvent):
         remove_hostname = self._state.hostnames.pop(event.departing_unit.name, None)
-        if not self.unit.is_leader():
-            return
 
-        if remove_hostname:
+        if self.unit.is_leader() and remove_hostname:
             remove_nodes = self._get_peer_data("remove_nodes", [])
             remove_nodes.append(remove_hostname)
             self._set_peer_data("remove_nodes", remove_nodes)
@@ -166,6 +166,13 @@ class MicroK8sCharm(CharmBase):
             self.config["containerd_https_proxy"],
             self.config["containerd_no_proxy"],
         )
+
+        # TODO(neoaggelos): this is not enough. this will be executed only after
+        # the new node has joined successfully, which is far too late. if we are
+        # adding /etc/hosts entries, these must come before the new node runs the
+        # microk8s join command.
+        if self.config["role"] != "worker" and self.config["manage_etc_hosts"]:
+            util.set_etc_hosts(self._get_etc_hosts_entries())
 
         if self._state.joined and self.unit.is_leader():
             remove_nodes = self._get_peer_data("remove_nodes", [])
@@ -255,6 +262,22 @@ class MicroK8sCharm(CharmBase):
         event.relation.data[self.app]["join_url"] = "{}:25000/{}".format(
             self.model.get_binding(event.relation).network.ingress_address, token
         )
+
+    def _get_etc_hosts_entries(self):
+        LOG.info("Looking for hostnames and IP addresses of related units")
+        entries = []
+        for _, relations in self.model.relations.items():
+            for relation in relations:
+                LOG.info("Relation %s (app %s)", relation.name, relation.app)
+                for unit in relation.units:
+                    hostname = relation.data[unit].get("hostname")
+                    private_address = relation.data[unit].get("private-address")
+
+                    LOG.debug("unit=%s hostname=%s IP=%s", unit.name, hostname, private_address)
+                    if hostname and private_address:
+                        entries.append(f"{private_address} {hostname} # {unit.name}")
+
+        return entries
 
 
 if __name__ == "__main__":  # pragma: nocover
