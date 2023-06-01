@@ -126,17 +126,16 @@ def test_config_containerd_env(e: Environment, role: str, is_leader: bool):
 def test_config_disable_cert_reissue(e: Environment, role: str, has_joined: bool):
     e.microk8s.get_unit_status.return_value = ops.model.ActiveStatus("fakestatus")
 
-    e.harness.update_config({"role": role, "addons": "", "disable_cert_reissue": False})
+    e.harness.update_config({"role": role, "automatic_certificate_reissue": True})
     e.harness.set_leader(has_joined)
     e.harness.begin_with_initial_hooks()
 
-    e.microk8s.set_cert_reissue.reset_mock()
     e.harness.charm._state.joined = has_joined
 
-    e.harness.update_config({"disable_cert_reissue": False})
-    e.harness.update_config({"disable_cert_reissue": True})
+    e.harness.update_config({"automatic_certificate_reissue": True})
+    e.harness.update_config({"automatic_certificate_reissue": False})
 
     if has_joined:
-        assert e.microk8s.set_cert_reissue.mock_calls == [mock.call(False), mock.call(True)]
+        e.microk8s.disable_cert_reissue.assert_called_once_with()
     else:
-        assert e.microk8s.set_cert_reissue.mock_calls == [mock.call(False), mock.call(False)]
+        e.microk8s.disable_cert_reissue.assert_not_called()

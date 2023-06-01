@@ -129,14 +129,10 @@ def set_containerd_env(containerd_env: str):
         util.check_call(["snap", "restart", "microk8s.daemon-containerd"])
 
 
-def set_cert_reissue(disable: bool):
-    """pass disable=True to disable automatic cert re-issue, False to re-enable"""
-    LOG.info("Apply cert-reissue configuration (disable=%s)", disable)
+def disable_cert_reissue():
+    """disable automatic cert reissue. this must never be done on nodes that have not yet joined"""
+    LOG.info("Disable automatic certificate reissue")
 
     path = snap_data_dir() / "var" / "lock" / "no-cert-reissue"
-    if not disable and path.exists():
-        LOG.debug("Removing %s", path)
-        path.unlink()
-    elif disable:
-        LOG.debug("Make sure that %s exists", path)
+    if not path.exists():
         util.ensure_file(path, "", 0o600, 0, 0)

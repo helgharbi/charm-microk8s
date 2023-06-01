@@ -192,8 +192,6 @@ class MicroK8sCharm(CharmBase):
             self._state.join_url = ""
 
         if not self._state.joined:
-            # Enable cert-reissue before joining
-            microk8s.set_cert_reissue(False)
             if not self._state.join_url:
                 self.unit.status = WaitingStatus("waiting for control plane relation")
                 return
@@ -203,8 +201,8 @@ class MicroK8sCharm(CharmBase):
             microk8s.wait_ready()
             self._state.joined = True
 
-        if self._state.joined:
-            microk8s.set_cert_reissue(self.config["disable_cert_reissue"])
+        if self._state.joined and not self.config["automatic_certificate_reissue"]:
+            microk8s.disable_cert_reissue()
 
         if self.config["role"] != "worker" and self.unit.is_leader():
             enabled_addons = self._get_peer_data("enabled_addons", [])
