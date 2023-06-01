@@ -40,25 +40,27 @@ options:
       to go into error state until the change is reverted.
     default: ""
     type: string
-  containerd_env:
+  containerd_http_proxy:
     description: |
-      Environment variables for containerd process. This is useful to specify host-wide resource
-      limits on the containerd process (with ulimit) or configuring an HTTP proxy to access image
-      registries on a constrained environment.
+      Set an HTTP proxy to be used by containerd to pull images from image registries. This is
+      useful when deploying the charm on a constrained environment.
 
-      Leave this empty to use the MicroK8s defaults.
+      Example: "http://squid.internal:3128"
+    default: ""
+    type: string
+  containerd_https_proxy:
+    description: |
+      Set an HTTPS proxy to be used by containerd to pull images from image registries. This is
+      useful when deploying the charm on a constrained environment.
 
-      Example:
+      Example: "http://squid.internal:3128"
+    default: ""
+    type: string
+  containerd_no_proxy:
+    description: |
+      When configuring an HTTP/HTTPS proxy for containerd, specify the list of IP ranges to exclude.
 
-      """
-      ulimit -n 65536 || true
-      ulimit -l 16384 || true
-
-      # uncomment to configure a proxy for containerd
-      # http_proxy=http://squid.internal:3128
-      # https_proxy=http://squid.internal:3128
-      # no_proxy=127.0.0.1,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12
-      """
+      Example: "127.0.0.1,10.0.0.0/8,192.168.0.0/16,172.16.0.0/12"
     default: ""
     type: string
   automatic_certificate_reissue:

@@ -4,6 +4,7 @@
 import json
 import logging
 import os
+import shlex
 import subprocess
 from pathlib import Path
 from typing import Optional
@@ -21,10 +22,6 @@ def snap_dir() -> Path:
 
 def snap_data_dir() -> Path:
     return Path("/var/snap/microk8s/current")
-
-
-def snap_common_dir() -> Path:
-    return Path("/var/snap/microk8s/common")
 
 
 def install(channel: Optional[str] = None):
@@ -117,14 +114,30 @@ def reconcile_addons(enabled_addons: list, target_addons: list):
             util.check_call(["microk8s", "enable", addon])
 
 
-def set_containerd_env(containerd_env: str):
-    """update containerd environment configuration"""
-    if not containerd_env:
-        LOG.debug("No custom containerd_env set, will not change anything")
+def set_containerd_proxy_options(http_proxy: str, https_proxy: str, no_proxy: str):
+    """update containerd http proxy configuration and restart containerd if changed"""
+
+    proxy_config = []
+    if http_proxy:
+        proxy_config.append(f"http_proxy={shlex.quote(http_proxy)}")
+    if https_proxy:
+        proxy_config.append(f"https_proxy={shlex.quote(https_proxy)}")
+    if no_proxy:
+        proxy_config.append(f"no_proxy={shlex.quote(no_proxy)}")
+
+    if not proxy_config:
+        LOG.debug("No containerd proxy configuration specified")
         return
 
-    LOG.info("Set containerd environment configuration")
-    if util.ensure_file(snap_data_dir() / "args" / "containerd_env", containerd_env, 0o600, 0, 0):
+    LOG.info("Set containerd http proxy configuration %s", proxy_config)
+
+    path = snap_data_dir() / "args" / "containerd-env"
+    containerd_env = path.read_text() if path.exists() else ""
+    new_containerd_env = util.ensure_block(
+        containerd_env, "\n".join(proxy_config), "{mark} managed by microk8s charm"
+    )
+
+    if util.ensure_file(path, new_containerd_env, 0o600, 0, 0):
         LOG.info("Restart containerd to apply environment configuration")
         util.check_call(["snap", "restart", "microk8s.daemon-containerd"])
 

@@ -5,6 +5,8 @@ import subprocess
 from pathlib import Path
 from unittest import mock
 
+import pytest
+
 import util
 
 
@@ -69,3 +71,34 @@ def test_ensure_file(chmod: mock.MagicMock, chown: mock.MagicMock, tmp_path: Pat
     assert not changed, "file has not changed if permissions change"
     chmod.assert_called_with(tmp_path / "file", 0o600)
     chown.assert_called_with(tmp_path / "file", 1000, 1001)
+
+
+@pytest.mark.parametrize(
+    "name, text, block, mark, expected",
+    [
+        (
+            "add to end of file if missing",
+            "l1\nl2",
+            "myblock",
+            "# {mark} block",
+            "l1\nl2\n# begin block\nmyblock\n# end block\n",
+        ),
+        (
+            "change existing block",
+            "l1\n# begin\nl2\n# end\n",
+            "l2\nl3",
+            "# {mark}",
+            "l1\n# begin\nl2\nl3\n# end\n",
+        ),
+        (
+            "change existing block and preserve data afterwards",
+            "l1\n# begin\nl2\n# end\nl4\nl5",
+            "l2\nl3",
+            "# {mark}",
+            "l1\n# begin\nl2\nl3\n# end\nl4\nl5",
+        ),
+    ],
+)
+def test_ensure_block(name: str, text: str, block: str, mark: str, expected: list):
+    _ = name
+    assert util.ensure_block(text, block, mark) == expected

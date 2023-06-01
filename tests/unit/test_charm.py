@@ -17,15 +17,18 @@ def test_install_channel(role, e: Environment):
         {
             "role": role,
             "channel": "fakechannel",
-            "containerd_env": "fakeenv",
-            "disable_cert_reissue": False,
+            "containerd_http_proxy": "fakehttpproxy",
+            "containerd_https_proxy": "fakehttpsproxy",
+            "containerd_no_proxy": "fakenoproxy",
         }
     )
     e.harness.begin_with_initial_hooks()
 
     e.util.install_required_packages.assert_called_once()
     e.microk8s.install.assert_called_once_with("fakechannel")
-    e.microk8s.set_containerd_env.assert_called_once_with("fakeenv")
+    e.microk8s.set_containerd_proxy_options.assert_called_once_with(
+        "fakehttpproxy", "fakehttpsproxy", "fakenoproxy"
+    )
 
 
 @pytest.mark.parametrize(
@@ -99,26 +102,6 @@ def test_config_addons(e: Environment, role: str, is_leader: bool):
         ]
     else:
         e.microk8s.reconcile_addons.assert_not_called()
-
-
-@pytest.mark.parametrize("role", ["", "control-plane", "worker"])
-@pytest.mark.parametrize("is_leader", [True, False])
-def test_config_containerd_env(e: Environment, role: str, is_leader: bool):
-    e.microk8s.get_unit_status.return_value = ops.model.ActiveStatus("fakestatus")
-
-    e.harness.update_config({"role": role, "addons": "", "containerd_env": "fakeenv1"})
-    e.harness.set_leader(is_leader)
-    e.harness.begin_with_initial_hooks()
-
-    e.microk8s.set_containerd_env.assert_called_with("fakeenv1")
-    e.microk8s.set_containerd_env.reset_mock()
-
-    e.harness.update_config({"containerd_env": ""})
-    e.microk8s.set_containerd_env.assert_called_once_with("")
-    e.microk8s.set_containerd_env.reset_mock()
-
-    e.harness.update_config({"containerd_env": "fakeenv2"})
-    e.microk8s.set_containerd_env.assert_called_once_with("fakeenv2")
 
 
 @pytest.mark.parametrize("role", ["", "control-plane"])
