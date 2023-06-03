@@ -1,0 +1,13 @@
+##
+## Copyright 2023 Canonical, Ltd.
+##
+type: charm
+bases:
+  - build-on:
+    - name: ubuntu
+      channel: "20.04"
+    run-on:
+    - name: ubuntu
+      channel: "20.04"
+    - name: ubuntu
+      channel: "22.04"

@@ -1,0 +1,26 @@
+##
+## Copyright 2023 Canonical, Ltd.
+##
+name: microk8s-addons
+
+display-name: MicroK8s Addons
+
+summary: MicroK8s is a small, fast, single-package Kubernetes for developers, IoT and edge.
+
+description: |
+  MicroK8s is a small, fast, secure, single node Kubernetes that installs on just about any Linux box. Use it for offline development, prototyping, testing, or use it on a VM as a small, cheap, reliable K8s for CI/CD. It's also a great K8s for appliances - develop your IoT apps for k8s and deploy them to MicroK8s on your boxes.
+
+maintainers:
+  - Angelos Kolaitis <angelos.kolaitis@canonical.com>
+  - Kostantinos Tsakalozos <kos.tsakalozos@canonical.com>
+
+subordinate: true
+
+series:
+  - focal
+  - jammy
+
+requires:
+  microk8s-addons:
+    interface: microk8s-addons
+    scope: container

@@ -1,0 +1,73 @@
+##
+## Copyright 2023 Canonical, Ltd.
+##
+options:
+  dns:
+    description: Enable the DNS addon
+    type: boolean
+    default: false
+  dns_nameserver:
+    description: |
+      Specify the upstream nameserver where CoreDNS will forward DNS requests
+
+      Examples:
+
+      - ""
+      - "/etc/resolv.conf"
+      - "1.1.1.1,8.8.8.8"
+      - "10.0.0.1"
+    type: string
+    default: ""
+  rbac:
+    description: Enable the RBAC addon
+    type: boolean
+    default: false
+  ingress:
+    description: Enable the ingress addon
+    type: boolean
+    default: false
+  hostpath_storage:
+    description: Enable the hostpath-storage addon
+    type: boolean
+    default: false
+  metallb:
+    description: Enable the MetalLB addon
+    type: boolean
+    default: false
+  metallb_range:
+    description: |
+      Specify the address range to be used by the MetalLB addon
+
+      Examples:
+
+      - "10.64.140.43-10.64.140.49"
+      - "10.0.100.0/24"
+    type: string
+    default: "10.64.140.43-10.64.140.49"
+  metrics_server:
+    description: Enable the metrics-server addon
+    type: boolean
+    default: false
+  gpu:
+    description: Enable the GPU addon
+    type: boolean
+    default: false
+  gpu_driver:
+    description: |
+      GPU driver installation method. One of the following:
+
+      - 'operator': Launch a daemonset to download, build and load NVIDIA kernel modules
+      - 'host': Use the host NVIDIA kernel modules (must be installed manually)
+      - 'auto': Use the 'host' NVIDIA kernel modules if available, otherwise 'operator'
+    type: string
+    default: auto
+  gpu_toolkit_version:
+    description: |
+      Override NVIDIA container runtime toolkit version to deploy.
+    type: string
+    default: ""
+  gpu_set_as_default_runtime:
+    description: |
+      Use the NVIDIA container runtime by default for all pods in the cluster.
+    type: boolean
+    default: false
