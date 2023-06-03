@@ -97,3 +97,15 @@ def test_config_disable_cert_reissue(e: Environment, role: str, has_joined: bool
         e.microk8s.disable_cert_reissue.assert_called_once_with()
     else:
         e.microk8s.disable_cert_reissue.assert_not_called()
+
+
+@pytest.mark.parametrize("role", ["", "control-plane", "worker"])
+def test_charm_upgrade(e: Environment, role: str):
+    e.microk8s.get_unit_status.return_value = ops.model.ActiveStatus("fakestatus")
+
+    e.harness.update_config({"role": role, "automatic_certificate_reissue": True})
+    e.harness.begin_with_initial_hooks()
+
+    e.harness.charm.on.upgrade_charm.emit()
+
+    e.microk8s.upgrade.assert_called_once()

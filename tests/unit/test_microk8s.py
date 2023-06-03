@@ -20,6 +20,14 @@ def test_microk8s_install(check_call: mock.MagicMock):
 
 
 @mock.patch("subprocess.check_call")
+def test_microk8s_upgrade(check_call: mock.MagicMock):
+    microk8s.upgrade()
+    check_call.assert_called_once_with(
+        ["snap", "refresh", "microk8s", "--channel", charm_config.SNAP_CHANNEL]
+    )
+
+
+@mock.patch("subprocess.check_call")
 def test_microk8s_uninstall(check_call: mock.MagicMock):
     microk8s.uninstall()
     check_call.assert_called_once_with(["snap", "remove", "microk8s", "--purge"])
