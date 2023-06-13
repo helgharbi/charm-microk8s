@@ -25,6 +25,7 @@ from ops.charm import (
 from ops.framework import StoredState
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, WaitingStatus
 
+import containerd
 import microk8s
 import util
 
@@ -167,6 +168,16 @@ class MicroK8sCharm(CharmBase):
             self.config["containerd_https_proxy"],
             self.config["containerd_no_proxy"],
         )
+
+        try:
+            registries = containerd.parse_registries(self.config["containerd_custom_registries"])
+            containerd.ensure_registry_configs(registries)
+        except ValueError:
+            LOG.exception("failed to configure containerd registries")
+            self.unit.status = BlockedStatus(
+                "failed to apply containerd_custom_registries, check logs for details"
+            )
+            return
 
         if self._state.joined and self.unit.is_leader():
             remove_nodes = self._get_peer_data("remove_nodes", [])

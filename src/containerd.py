@@ -2,6 +2,7 @@
 # Copyright 2023 Canonical, Ltd.
 #
 import base64
+import json
 import logging
 from typing import List, Optional
 
@@ -40,7 +41,15 @@ class Registry(pydantic.BaseModel, extra=pydantic.Extra.forbid):
         return v or parse_url(values["url"]).netloc
 
     @pydantic.validator("ca_file")
-    def populate_ca_file(cls, v):
+    def parse_base64_ca_file(cls, v):
+        return base64.b64decode(v.encode()).decode()
+
+    @pydantic.validator("cert_file")
+    def parse_base64_cert_file(cls, v):
+        return base64.b64decode(v.encode()).decode()
+
+    @pydantic.validator("key_file")
+    def parse_base64_key_file(cls, v):
         return base64.b64decode(v.encode()).decode()
 
     def get_auth_config(self):
@@ -49,6 +58,21 @@ class Registry(pydantic.BaseModel, extra=pydantic.Extra.forbid):
             return {}
 
         return {self.url: {"auth": {"username": self.username, "password": self.password}}}
+
+
+class RegistryConfigs(pydantic.BaseModel, extra=pydantic.Extra.forbid):
+    registries: List[Registry]
+
+
+def parse_registries(json_str: str) -> List[Registry]:
+    """parse registry configurations from json string. Raises ValueError
+    if configuration is not valid"""
+    try:
+        parsed = json.loads(json_str)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"not valid JSON: {e}") from e
+
+    return RegistryConfigs(registries=parsed).registries
 
 
 def ensure_registry_configs(registries: List[Registry]):
@@ -103,6 +127,9 @@ def ensure_registry_configs(registries: List[Registry]):
             LOG.debug("Configure username and password for %s (%s)", r.url, r.host)
             auth_config.update(**r.get_auth_config())
 
+    if not auth_config:
+        return
+    
     registry_configs = {
         "plugins": {"io.containerd.grpc.v1.cri": {"registry": {"configs": auth_config}}}
     }
@@ -113,5 +140,5 @@ def ensure_registry_configs(registries: List[Registry]):
         containerd_toml, tomli.dumps(registry_configs), "# {mark} managed by microk8s charm"
     )
     if util.ensure_file(containerd_toml_path, new_containerd_toml, 0o600, 0, 0):
-        LOG.info("")
+        LOG.info("Restart containerd to apply registry configurations")
         util.ensure_call(["snap", "restart", "microk8s.daemon-containerd"])
