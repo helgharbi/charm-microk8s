@@ -135,10 +135,9 @@ def set_containerd_proxy_options(http_proxy: str, https_proxy: str, no_proxy: st
 
 def disable_cert_reissue():
     """disable automatic cert reissue. this must never be done on nodes that have not yet joined"""
-    LOG.info("Disable automatic certificate reissue")
-
     path = snap_data_dir() / "var" / "lock" / "no-cert-reissue"
     if not path.exists():
+        LOG.info("Disable automatic certificate reissue")
         util.ensure_file(path, "", 0o600, 0, 0)
 
 
@@ -175,3 +174,19 @@ def configure_extra_sans(extra_sans_str: str):
     if util.ensure_file(path, new_csr_conf, 0o600, 0, 0):
         LOG.info("Update kube-apiserver certificate with extra SANs %s", extra_sans)
         util.ensure_call(["microk8s", "refresh-certs", "-e", "server.crt"])
+
+
+def configure_dns(ip: str, domain: str):
+    """update kubelet dns configuration"""
+    if ip and domain:
+        block = "\n".join([f"--cluster-dns={ip}", f"--cluster-domain={domain}"])
+    else:
+        block = ""
+
+    kubelet_args_file = snap_data_dir() / "args" / "kubelet"
+    kubelet_args = kubelet_args_file.read_text() if kubelet_args_file.exists() else ""
+    new_kubelet_args = util.ensure_block(kubelet_args, block, "# {mark} microk8s charm dns config")
+
+    if util.ensure_file(kubelet_args_file, new_kubelet_args, 0o600, 0, 0):
+        LOG.info("Restart kubelet to apply new DNS configuration (%s, domain %s)", ip, domain)
+        util.ensure_call(["snap", "restart", "microk8s.daemon-kubelite"])

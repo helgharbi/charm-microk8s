@@ -239,3 +239,46 @@ def test_microk8s_configure_extra_sans(
         "[ alt_names ]\nIP.1000 = 1.1.1.1\nDNS.1001 = k8s.local\nIP.1002 = 2.2.2.2",
         "# {mark} managed by microk8s charm",
     )
+
+
+@mock.patch("microk8s.snap_data_dir", autospec=True)
+@mock.patch("util.ensure_file", autospec=True)
+@mock.patch("util.ensure_block", autospec=True)
+@mock.patch("util.ensure_call", autospec=True)
+@pytest.mark.parametrize("changed", (True, False))
+def test_microk8s_configure_dns(
+    ensure_call: mock.MagicMock,
+    ensure_block: mock.MagicMock,
+    ensure_file: mock.MagicMock,
+    snap_data_dir: mock.MagicMock,
+    changed: bool,
+    tmp_path: Path,
+):
+    snap_data_dir.return_value = tmp_path
+    ensure_file.return_value = changed
+
+    kubelet_args_file = tmp_path / "args" / "kubelet"
+
+    kubelet_args_file.parent.mkdir(exist_ok=True)
+    kubelet_args_file.write_text("old data")
+
+    microk8s.configure_dns(None, None)
+    ensure_block.assert_called_once_with("old data", "", "# {mark} microk8s charm dns config")
+
+    ensure_block.reset_mock()
+    ensure_file.reset_mock()
+    ensure_call.reset_mock()
+
+    microk8s.configure_dns("fakeip", "fakedomain")
+    ensure_block.assert_called_once_with(
+        "old data",
+        "--cluster-dns=fakeip\n--cluster-domain=fakedomain",
+        "# {mark} microk8s charm dns config",
+    )
+
+    ensure_file.assert_called_once_with(kubelet_args_file, ensure_block.return_value, 0o600, 0, 0)
+
+    if changed:
+        ensure_call.assert_called_once_with(["snap", "restart", "microk8s.daemon-kubelite"])
+    else:
+        ensure_call.assert_not_called()

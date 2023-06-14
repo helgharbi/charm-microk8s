@@ -190,3 +190,30 @@ def test_config_containerd_custom_registries(e: Environment, role: str, has_join
     e.harness.update_config({"containerd_custom_registries": "fakeval"})
     e.containerd.parse_registries.assert_called_once_with("fakeval")
     assert e.harness.charm.unit.status.__class__ == BlockedStatus
+
+
+@pytest.mark.parametrize("role", ["", "control-plane", "worker"])
+@pytest.mark.parametrize("has_joined", [False, True])
+def test_dns_relation(e: Environment, role: str, has_joined: bool):
+    e.microk8s.get_unit_status.return_value = ops.model.ActiveStatus("fakestatus")
+
+    e.harness.update_config({"role": role})
+    e.harness.set_leader(False)
+    e.harness.begin_with_initial_hooks()
+
+    e.microk8s.configure_dns.assert_not_called()
+
+    e.harness.charm._state.joined = has_joined
+
+    # add relation
+    rel_id = e.harness.add_relation("dns", "coredns")
+    e.harness.add_relation_unit(rel_id, "coredns/1")
+    e.microk8s.configure_dns.reset_mock()
+
+    # update relation data
+    e.harness.update_relation_data(rel_id, "coredns/1", {"sdn-ip": "ip", "domain": "domain"})
+
+    if has_joined:
+        e.microk8s.configure_dns.assert_called_once_with("ip", "domain")
+    else:
+        e.microk8s.configure_dns.assert_not_called()

@@ -58,6 +58,8 @@ class MicroK8sCharm(CharmBase):
             join_url="",
             hostnames={},
             hostname=socket.gethostname(),
+            dns_ip=None,
+            dns_domain=None,
         )
 
         if self.config["role"] == "worker":
@@ -71,6 +73,8 @@ class MicroK8sCharm(CharmBase):
             self.framework.observe(self.on.microk8s_relation_joined, self._retrieve_join_url)
             self.framework.observe(self.on.microk8s_relation_changed, self._retrieve_join_url)
             self.framework.observe(self.on.microk8s_relation_broken, self._on_relation_broken)
+            self.framework.observe(self.on.dns_relation_joined, self._on_dns_relation_changed)
+            self.framework.observe(self.on.dns_relation_changed, self._on_dns_relation_changed)
         else:
             self.framework.observe(self.on.remove, self._on_remove)
             self.framework.observe(self.on.install, self._on_install)
@@ -94,12 +98,29 @@ class MicroK8sCharm(CharmBase):
             self.framework.observe(
                 self.on.microk8s_provides_relation_departed, self._on_relation_departed
             )
+            self.framework.observe(self.on.dns_relation_joined, self._on_dns_relation_changed)
+            self.framework.observe(self.on.dns_relation_changed, self._on_dns_relation_changed)
 
     def _record_hostnames(self, event: Union[RelationChangedEvent, RelationJoinedEvent]):
         for unit in event.relation.units:
             hostname = event.relation.data[unit].get("hostname")
             if hostname is not None:
                 self._state.hostnames[unit.name] = hostname
+
+    def _on_dns_relation_changed(self, event: Union[RelationChangedEvent, RelationJoinedEvent]):
+        self._state.dns_ip = None
+        self._state.dns_domain = None
+
+        for unit in event.relation.units:
+            unit_data = event.relation.data[unit]
+            dns_ip = unit_data.get("sdn-ip")
+            dns_domain = unit_data.get("domain")
+            if dns_ip and dns_domain:
+                LOG.info("Got DNS info from relation (%s, %s)", dns_ip, dns_domain)
+                self._state.dns_ip = dns_ip
+                self._state.dns_domain = dns_domain
+
+        self.on.config_changed.emit()
 
     def _on_relation_departed(self, event: RelationDepartedEvent):
         remove_hostname = self._state.hostnames.pop(event.departing_unit.name, None)
@@ -218,6 +239,9 @@ class MicroK8sCharm(CharmBase):
             microk8s.join(self._state.join_url, self.config["role"] == "worker")
             microk8s.wait_ready()
             self._state.joined = True
+
+        self.unit.status = MaintenanceStatus("configuring DNS")
+        microk8s.configure_dns(self._state.dns_ip, self._state.dns_domain)
 
         if self.config["role"] != "worker":
             if not self.config["automatic_certificate_reissue"]:
