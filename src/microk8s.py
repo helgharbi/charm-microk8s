@@ -213,3 +213,14 @@ def configure_hostpath_storage(enable: bool):
     else:
         LOG.info("Disable hostpath storage")
         util.ensure_call(["microk8s", "disable", "hostpath-storage"], input=b"n")
+
+
+def configure_rbac(enable: bool):
+    """enable or disable rbac"""
+    apply_launch_configuration(
+        {
+            "extraKubeAPIServerArgs": {
+                "--authorization-mode": "Node,RBAC" if enable else "AlwaysAllow"
+            }
+        }
+    )

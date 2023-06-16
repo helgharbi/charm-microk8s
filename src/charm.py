@@ -88,6 +88,7 @@ class MicroK8sCharm(CharmBase):
             self.framework.observe(self.on.config_changed, self.config_hostpath_storage)
             self.framework.observe(self.on.config_changed, self.config_certificate_reissue)
             self.framework.observe(self.on.config_changed, self.config_extra_sans)
+            self.framework.observe(self.on.config_changed, self.config_rbac)
             self.framework.observe(self.on.config_changed, self.update_status)
             self.framework.observe(self.on.peer_relation_joined, self.add_node)
             self.framework.observe(self.on.peer_relation_joined, self.announce_hostname)
@@ -173,6 +174,14 @@ class MicroK8sCharm(CharmBase):
             self.unit.status = BlockedStatus(
                 "failed to apply containerd_custom_registries, check logs for details"
             )
+
+    def config_rbac(self, _: ConfigChangedEvent):
+        if isinstance(self.unit.status, BlockedStatus):
+            return
+
+        if self._state.joined:
+            LOG.info("Ensure RBAC mode is %s", self.config["rbac"])
+            microk8s.configure_rbac(self.config["rbac"])
 
     def config_hostpath_storage(self, _: ConfigChangedEvent):
         if isinstance(self.unit.status, BlockedStatus):
