@@ -26,6 +26,8 @@ provides:
   workers:
     interface: microk8s-info
     scope: global
+  metrics:
+    interface: prometheus_scrape
 
 requires:
   control-plane:

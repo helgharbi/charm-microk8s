@@ -1,6 +1,7 @@
 #
 # Copyright 2023 Canonical, Ltd.
 #
+import subprocess
 from unittest import mock
 
 import ops
@@ -20,7 +21,6 @@ def test_install(e: Environment, is_leader: bool):
     e.util.install_required_packages.assert_called_once_with()
     e.microk8s.install.assert_called_once_with()
     e.microk8s.wait_ready.assert_called_once_with()
-    e.microk8s.disable_cert_reissue.assert_not_called()
 
     if not is_leader:
         assert isinstance(e.harness.charm.unit.status, ops.model.WaitingStatus)
@@ -241,3 +241,102 @@ def test_follower_become_leader_remove_already_departed_nodes(e: Environment, be
         e.microk8s.remove_node.assert_not_called()
 
     assert e.harness.charm.unit.status == ops.model.ActiveStatus("fakestatus")
+
+
+@pytest.mark.parametrize("is_leader", (True, False))
+def test_metrics_relation(e: Environment, is_leader: bool):
+    e.microk8s.get_unit_status.return_value = ops.model.ActiveStatus("fakestatus")
+    e.gethostname.return_value = "fakehostname"
+    e.metrics.build_scrape_configs.return_value = {"fakekey": "fakevalue"}
+    e.metrics.get_bearer_token.return_value = "faketoken"
+
+    e.harness.add_network("10.10.10.10")
+    e.harness.update_config({"role": "control-plane"})
+    e.harness.set_leader(True)
+    e.harness.begin_with_initial_hooks()
+
+    e.harness.set_leader(is_leader)
+
+    e.metrics.apply_required_resources.assert_not_called()
+    e.metrics.get_bearer_token.assert_not_called()
+    e.metrics.build_scrape_configs.assert_not_called()
+
+    def helper_assert_calls(*args, apply_called=False):
+        """helper method for less repetition"""
+        if not is_leader:
+            e.metrics.apply_required_resources.assert_not_called()
+            e.metrics.get_bearer_token.assert_not_called()
+            e.metrics.build_scrape_configs.assert_not_called()
+            assert e.harness.charm.model.get_relation("metrics").data.get("microk8s") is None
+
+            return
+
+        if apply_called:
+            e.metrics.apply_required_resources.assert_called_once_with()
+        else:
+            e.metrics.apply_required_resources.assert_not_called()
+
+        e.metrics.get_bearer_token.assert_called_once_with()
+        e.metrics.build_scrape_configs.assert_called_once_with(*args)
+
+        e.metrics.apply_required_resources.reset_mock()
+        e.metrics.get_bearer_token.reset_mock()
+        e.metrics.build_scrape_configs.reset_mock()
+
+        assert e.harness.get_relation_data(metrics_rel_id, "microk8s") == {
+            "scrape_jobs": '{"fakekey": "fakevalue"}',
+        }
+
+    metrics_rel_id = e.harness.add_relation("metrics", "prometheus")
+    e.harness.add_relation_unit(metrics_rel_id, "prometheus/0")
+
+    helper_assert_calls("faketoken", [("fakehostname", "10.10.10.10")], [], apply_called=True)
+
+    # add peer control plane node
+    peer_rel_id = e.harness.charm.model.get_relation("peer").id
+    e.harness.add_relation_unit(peer_rel_id, "microk8s/1")
+    e.harness.update_relation_data(peer_rel_id, "microk8s/1", {"private-address": "fakeaddr2"})
+    e.harness.update_relation_data(peer_rel_id, "microk8s/1", {"hostname": "fakehostname2"})
+
+    helper_assert_calls(
+        "faketoken", [("fakehostname", "10.10.10.10"), ("fakehostname2", "fakeaddr2")], []
+    )
+
+    # add worker node
+    rel_id = e.harness.add_relation("workers", "microk8s-worker")
+    e.harness.add_relation_unit(rel_id, "microk8s-worker/0")
+    e.harness.update_relation_data(
+        rel_id, "microk8s-worker/0", {"hostname": "fakehostname3", "private-address": "fakeaddr2"}
+    )
+
+    helper_assert_calls(
+        "faketoken",
+        [("fakehostname", "10.10.10.10"), ("fakehostname2", "fakeaddr2")],
+        [("fakehostname3", "fakeaddr2")],
+    )
+
+    # remove control plane node
+    e.harness.remove_relation_unit(peer_rel_id, "microk8s/1")
+    helper_assert_calls(
+        "faketoken", [("fakehostname", "10.10.10.10")], [("fakehostname3", "fakeaddr2")]
+    )
+
+    # remove worker node
+    e.harness.remove_relation_unit(rel_id, "microk8s-worker/0")
+    helper_assert_calls("faketoken", [("fakehostname", "10.10.10.10")], [])
+
+    # failed to retrieve token
+    if is_leader:
+        e.metrics.build_scrape_configs.return_value = {"fakekey2": "fakevalue2"}
+        e.metrics.get_bearer_token.side_effect = subprocess.CalledProcessError("cmd", 1)
+        e.harness.add_relation_unit(rel_id, "microk8s-worker/0")
+        e.harness.update_relation_data(
+            rel_id,
+            "microk8s-worker/0",
+            {"hostname": "fakehostname3", "private-address": "fakeaddr2"},
+        )
+        e.metrics.get_bearer_token.assert_called_once_with()
+        e.metrics.build_scrape_configs.assert_not_called()
+        assert e.harness.get_relation_data(metrics_rel_id, "microk8s") == {
+            "scrape_jobs": '{"fakekey": "fakevalue"}'
+        }
