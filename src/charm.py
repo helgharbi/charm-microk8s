@@ -27,6 +27,7 @@ from ops.framework import StoredState
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, WaitingStatus
 
 import containerd
+import metrics
 import microk8s
 import util
 
@@ -75,12 +76,19 @@ class MicroK8sCharm(CharmBase):
             self.framework.observe(self.on.control_plane_relation_broken, self.leave_cluster)
             self.framework.observe(self.on.control_plane_relation_broken, self.update_status)
         else:
+            # lifecycle
             self.framework.observe(self.on.remove, self.on_remove)
             self.framework.observe(self.on.upgrade_charm, self.on_upgrade)
             self.framework.observe(self.on.install, self.on_install)
             self.framework.observe(self.on.install, self.bootstrap_cluster)
             self.framework.observe(self.on.install, self.open_ports)
+            self.framework.observe(self.on.leader_elected, self.remove_departed_nodes)
+            self.framework.observe(self.on.leader_elected, self.update_status)
+            self.framework.observe(self.on.leader_elected, self.update_scrape_configs)
             self.framework.observe(self.on.update_status, self.update_status)
+            self.framework.observe(self.on.update_status, self.update_scrape_configs)
+
+            # configuration
             self.framework.observe(self.on.config_changed, self.config_ensure_role)
             self.framework.observe(self.on.config_changed, self.on_install)
             self.framework.observe(self.on.config_changed, self.config_containerd_proxy)
@@ -89,6 +97,8 @@ class MicroK8sCharm(CharmBase):
             self.framework.observe(self.on.config_changed, self.config_certificate_reissue)
             self.framework.observe(self.on.config_changed, self.config_extra_sans)
             self.framework.observe(self.on.config_changed, self.update_status)
+
+            # clustering
             self.framework.observe(self.on.peer_relation_joined, self.add_node)
             self.framework.observe(self.on.peer_relation_joined, self.announce_hostname)
             self.framework.observe(self.on.peer_relation_joined, self.record_hostnames)
@@ -99,16 +109,23 @@ class MicroK8sCharm(CharmBase):
             self.framework.observe(self.on.peer_relation_changed, self.join_cluster)
             self.framework.observe(self.on.peer_relation_changed, self.config_extra_sans)
             self.framework.observe(self.on.peer_relation_changed, self.update_status)
+            self.framework.observe(self.on.peer_relation_changed, self.update_scrape_configs)
             self.framework.observe(self.on.peer_relation_departed, self.on_relation_departed)
             self.framework.observe(self.on.peer_relation_departed, self.remove_departed_nodes)
             self.framework.observe(self.on.peer_relation_departed, self.update_status)
-            self.framework.observe(self.on.leader_elected, self.remove_departed_nodes)
-            self.framework.observe(self.on.leader_elected, self.update_status)
             self.framework.observe(self.on.workers_relation_joined, self.add_node)
             self.framework.observe(self.on.workers_relation_changed, self.record_hostnames)
+            self.framework.observe(self.on.workers_relation_changed, self.update_scrape_configs)
             self.framework.observe(self.on.workers_relation_departed, self.on_relation_departed)
             self.framework.observe(self.on.workers_relation_departed, self.remove_departed_nodes)
             self.framework.observe(self.on.workers_relation_departed, self.update_status)
+
+            # observability
+            self.framework.observe(
+                self.on.metrics_relation_joined, self.apply_observability_resources
+            )
+            self.framework.observe(self.on.metrics_relation_joined, self.update_scrape_configs)
+            self.framework.observe(self.on.metrics_relation_changed, self.update_scrape_configs)
 
     def on_remove(self, _: RemoveEvent):
         try:
@@ -219,10 +236,14 @@ class MicroK8sCharm(CharmBase):
         if not self.unit.is_leader():
             return
 
+        # must remove node
         if remove_hostname:
             remove_nodes = self._get_peer_data("remove_nodes", [])
             remove_nodes.append(remove_hostname)
             self._set_peer_data("remove_nodes", remove_nodes)
+
+        # must update scrape configs
+        self.update_scrape_configs(None)
 
     def remove_departed_nodes(self, _: Union[RelationDepartedEvent, LeaderElectedEvent]):
         if self._state.joined and self.unit.is_leader():
@@ -290,6 +311,45 @@ class MicroK8sCharm(CharmBase):
         event.relation.data[self.app]["join_url"] = "{}:25000/{}".format(
             self.model.get_binding(event.relation).network.ingress_address, token
         )
+
+    def apply_observability_resources(self, _: RelationJoinedEvent):
+        if isinstance(self.unit.status, BlockedStatus):
+            return
+
+        if self._state.joined and self.unit.is_leader():
+            metrics.apply_required_resources()
+
+    def update_scrape_configs(self, _: Any):
+        if not self.unit.is_leader() or not self.model.relations["metrics"]:
+            return
+
+        control_plane_nodes = [
+            (socket.gethostname(), str(self.model.get_binding("metrics").network.ingress_address))
+        ]
+        worker_nodes = []
+        try:
+            for rel in self.model.relations["peer"]:
+                for unit in rel.units:
+                    data = rel.data[unit]
+                    control_plane_nodes.append((data["hostname"], data["private-address"]))
+
+            for rel in self.model.relations["workers"]:
+                for unit in rel.units:
+                    data = rel.data[unit]
+                    worker_nodes.append((data["hostname"], data["private-address"]))
+        except KeyError:
+            LOG.debug("missing relation information, will update scrape configs later")
+            return
+
+        try:
+            token = metrics.get_bearer_token()
+        except subprocess.CalledProcessError:
+            LOG.exception("failed to retrieve authentication token for observability")
+            return
+
+        scrape_configs = metrics.build_scrape_configs(token, control_plane_nodes, worker_nodes)
+        for relation in self.model.relations["metrics"]:
+            relation.data[self.app]["scrape_jobs"] = json.dumps(scrape_configs)
 
 
 if __name__ == "__main__":  # pragma: nocover
