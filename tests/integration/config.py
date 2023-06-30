@@ -59,3 +59,7 @@ MK8S_TRAEFIK_K8S_CHARM = os.getenv("MK8S_TRAEFIK_K8S_CHARM", "ch:traefik-k8s")
 # MK8S_HELLO_KUBECON_CHARM is the hello-kubecon charm for the ingress integration tests.
 #   - 'ch:hello-kubecon'        <-- install charm 'hello-kubecon' from CharmHub
 MK8S_HELLO_KUBECON_CHARM = os.getenv("MK8S_HELLO_KUBECON_CHARM", "ch:hello-kubecon")
+
+# MK8S_PROMETHEUS_CHARM is the hello-kubecon charm for the observability integration tests.
+#   - 'ch:prometheus-k8s'       <-- install charm 'prometheus-k8s' from CharmHub
+MK8S_PROMETHEUS_CHARM = os.getenv("MK8S_HELLO_KUBECON_CHARM", "ch:prometheus-k8s")
