@@ -41,8 +41,8 @@ def test_get_bearer_token(ensure_call: mock.MagicMock):
 def test_build_scrape_configs():
     res = metrics.build_scrape_configs(
         "faketoken",
-        [("cp1", "1.1.1.1"), ("cp2", "2.2.2.2")],
-        [("w1", "3.3.3.3"), ("w2", "4.4.4.4")],
+        [("cp/1", "cp1", "1.1.1.1"), ("cp/2", "cp2", "2.2.2.2")],
+        [("w/1", "w1", "3.3.3.3"), ("w/2", "w2", "4.4.4.4")],
     )
 
     assert res == [
@@ -51,21 +51,33 @@ def test_build_scrape_configs():
             "tls_config": {"insecure_skip_verify": True},
             "authorization": {"credentials": "faketoken"},
             "job_name": "apiserver",
-            "static_configs": [{"targets": ["1.1.1.1:16443", "2.2.2.2:16443"]}],
+            "static_configs": [
+                {"targets": ["1.1.1.1:16443"], "labels": {"juju_unit": "cp/1"}},
+                {"targets": ["2.2.2.2:16443"], "labels": {"juju_unit": "cp/2"}},
+            ],
+            "relabel_configs": [{"target_label": "job", "replacement": "apiserver"}],
         },
         {
             "scheme": "https",
             "tls_config": {"insecure_skip_verify": True},
             "authorization": {"credentials": "faketoken"},
             "job_name": "kube-scheduler",
-            "static_configs": [{"targets": ["1.1.1.1:16443", "2.2.2.2:16443"]}],
+            "static_configs": [
+                {"targets": ["1.1.1.1:16443"], "labels": {"juju_unit": "cp/1"}},
+                {"targets": ["2.2.2.2:16443"], "labels": {"juju_unit": "cp/2"}},
+            ],
+            "relabel_configs": [{"target_label": "job", "replacement": "kube-scheduler"}],
         },
         {
             "scheme": "https",
             "tls_config": {"insecure_skip_verify": True},
             "authorization": {"credentials": "faketoken"},
             "job_name": "kube-controller-manager",
-            "static_configs": [{"targets": ["1.1.1.1:16443", "2.2.2.2:16443"]}],
+            "static_configs": [
+                {"targets": ["1.1.1.1:16443"], "labels": {"juju_unit": "cp/1"}},
+                {"targets": ["2.2.2.2:16443"], "labels": {"juju_unit": "cp/2"}},
+            ],
+            "relabel_configs": [{"target_label": "job", "replacement": "kube-controller-manager"}],
         },
         {
             "scheme": "https",
@@ -73,11 +85,12 @@ def test_build_scrape_configs():
             "authorization": {"credentials": "faketoken"},
             "job_name": "kube-proxy",
             "static_configs": [
-                {"targets": ["1.1.1.1:10250"], "labels": {"node": "cp1"}},
-                {"targets": ["2.2.2.2:10250"], "labels": {"node": "cp2"}},
-                {"targets": ["3.3.3.3:10250"], "labels": {"node": "w1"}},
-                {"targets": ["4.4.4.4:10250"], "labels": {"node": "w2"}},
+                {"targets": ["1.1.1.1:10250"], "labels": {"juju_unit": "cp/1", "node": "cp1"}},
+                {"targets": ["2.2.2.2:10250"], "labels": {"juju_unit": "cp/2", "node": "cp2"}},
+                {"targets": ["3.3.3.3:10250"], "labels": {"juju_unit": "w/1", "node": "w1"}},
+                {"targets": ["4.4.4.4:10250"], "labels": {"juju_unit": "w/2", "node": "w2"}},
             ],
+            "relabel_configs": [{"target_label": "job", "replacement": "kube-proxy"}],
         },
         {
             "scheme": "https",
@@ -86,10 +99,10 @@ def test_build_scrape_configs():
             "job_name": "kubelet",
             "metrics_path": "/metrics",
             "static_configs": [
-                {"targets": ["1.1.1.1:10250"], "labels": {"node": "cp1"}},
-                {"targets": ["2.2.2.2:10250"], "labels": {"node": "cp2"}},
-                {"targets": ["3.3.3.3:10250"], "labels": {"node": "w1"}},
-                {"targets": ["4.4.4.4:10250"], "labels": {"node": "w2"}},
+                {"targets": ["1.1.1.1:10250"], "labels": {"juju_unit": "cp/1", "node": "cp1"}},
+                {"targets": ["2.2.2.2:10250"], "labels": {"juju_unit": "cp/2", "node": "cp2"}},
+                {"targets": ["3.3.3.3:10250"], "labels": {"juju_unit": "w/1", "node": "w1"}},
+                {"targets": ["4.4.4.4:10250"], "labels": {"juju_unit": "w/2", "node": "w2"}},
             ],
             "relabel_configs": [
                 {"target_label": "metrics_path", "replacement": "/metrics"},
@@ -103,10 +116,10 @@ def test_build_scrape_configs():
             "job_name": "kubelet-cadvisor",
             "metrics_path": "/metrics/cadvisor",
             "static_configs": [
-                {"targets": ["1.1.1.1:10250"], "labels": {"node": "cp1"}},
-                {"targets": ["2.2.2.2:10250"], "labels": {"node": "cp2"}},
-                {"targets": ["3.3.3.3:10250"], "labels": {"node": "w1"}},
-                {"targets": ["4.4.4.4:10250"], "labels": {"node": "w2"}},
+                {"targets": ["1.1.1.1:10250"], "labels": {"juju_unit": "cp/1", "node": "cp1"}},
+                {"targets": ["2.2.2.2:10250"], "labels": {"juju_unit": "cp/2", "node": "cp2"}},
+                {"targets": ["3.3.3.3:10250"], "labels": {"juju_unit": "w/1", "node": "w1"}},
+                {"targets": ["4.4.4.4:10250"], "labels": {"juju_unit": "w/2", "node": "w2"}},
             ],
             "relabel_configs": [
                 {"target_label": "metrics_path", "replacement": "/metrics/cadvisor"},
@@ -120,10 +133,10 @@ def test_build_scrape_configs():
             "job_name": "kubelet-probes",
             "metrics_path": "/metrics/probes",
             "static_configs": [
-                {"targets": ["1.1.1.1:10250"], "labels": {"node": "cp1"}},
-                {"targets": ["2.2.2.2:10250"], "labels": {"node": "cp2"}},
-                {"targets": ["3.3.3.3:10250"], "labels": {"node": "w1"}},
-                {"targets": ["4.4.4.4:10250"], "labels": {"node": "w2"}},
+                {"targets": ["1.1.1.1:10250"], "labels": {"juju_unit": "cp/1", "node": "cp1"}},
+                {"targets": ["2.2.2.2:10250"], "labels": {"juju_unit": "cp/2", "node": "cp2"}},
+                {"targets": ["3.3.3.3:10250"], "labels": {"juju_unit": "w/1", "node": "w1"}},
+                {"targets": ["4.4.4.4:10250"], "labels": {"juju_unit": "w/2", "node": "w2"}},
             ],
             "relabel_configs": [
                 {"target_label": "metrics_path", "replacement": "/metrics/probes"},
