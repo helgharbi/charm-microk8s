@@ -45,4 +45,5 @@ async def test_observability_metrics(e: OpsTest):
             with e.model_context(k8s_model):
                 await e.model.wait_for_idle(["prometheus"])
         finally:
+            await e.model.remove_relation("microk8s", "prometheus")
             await e.model.remove_saas("prometheus")
