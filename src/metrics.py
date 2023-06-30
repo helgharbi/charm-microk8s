@@ -37,8 +37,6 @@ We should have the following jobs for each component (on the right are required 
 - kubelet (probes)              job="kubelet", metrics_path="/metrics/probes", node="$nodename"
 """
 
-import re
-
 import util
 
 
@@ -69,16 +67,19 @@ def build_scrape_configs(token, control_plane_nodes, worker_nodes):
     """
     needs
     token = 'token with permissions above'
-    control_plane_nodes = ((hostname, ip), (hostname2, ip2), ...)
-    worker_nodes = ((hostname, ip), (hostname2, ip2), ...)
+    control_plane_nodes = ((unit, hostname, ip), (unit2, hostname2, ip2), ...)
+    worker_nodes = ((unit, hostname, ip), (unit2, hostname2, ip2), ...)
     """
 
     scrape_configs = []
 
-    apiserver_targets = [{"targets": [f"{address}:16443" for (_, address) in control_plane_nodes]}]
+    apiserver_targets = [
+        {"targets": [f"{address}:16443"], "labels": {"juju_unit": unit}}
+        for (unit, _, address) in control_plane_nodes
+    ]
     kubelet_targets = [
-        {"targets": [f"{address}:10250"], "labels": {"node": hostname}}
-        for (hostname, address) in control_plane_nodes + worker_nodes
+        {"targets": [f"{address}:10250"], "labels": {"juju_unit": unit, "node": hostname}}
+        for (unit, hostname, address) in control_plane_nodes + worker_nodes
     ]
 
     base_job = {
@@ -91,16 +92,21 @@ def build_scrape_configs(token, control_plane_nodes, worker_nodes):
         },
     }
 
-    # apiserver, kube-scheduler, kube-controller-manager (through apiserver)
-    for job_name in ["apiserver", "kube-scheduler", "kube-controller-manager"]:
+    # apiserver, kube-scheduler, kube-controller-manager, kube-proxy
+    for job_name, targets in [
+        ("apiserver", apiserver_targets),
+        ("kube-scheduler", apiserver_targets),
+        ("kube-controller-manager", apiserver_targets),
+        ("kube-proxy", kubelet_targets),
+    ]:
         scrape_configs.append(
-            {**base_job, "job_name": job_name, "static_configs": apiserver_targets}
+            {
+                **base_job,
+                "job_name": job_name,
+                "static_configs": targets,
+                "relabel_configs": [{"target_label": "job", "replacement": job_name}],
+            }
         )
-
-    # kube-proxy (through kubelet)
-    scrape_configs.append(
-        {**base_job, "job_name": "kube-proxy", "static_configs": kubelet_targets}
-    )
 
     # kubelet
     for job_name, metrics_path in (

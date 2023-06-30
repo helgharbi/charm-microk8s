@@ -324,19 +324,23 @@ class MicroK8sCharm(CharmBase):
             return
 
         control_plane_nodes = [
-            (socket.gethostname(), str(self.model.get_binding("metrics").network.ingress_address))
+            (
+                self.unit.name,
+                socket.gethostname(),
+                str(self.model.get_binding("metrics").network.ingress_address),
+            )
         ]
         worker_nodes = []
         try:
             for rel in self.model.relations["peer"]:
-                for unit in rel.units:
-                    data = rel.data[unit]
-                    control_plane_nodes.append((data["hostname"], data["private-address"]))
+                for u in rel.units:
+                    data = rel.data[u]
+                    control_plane_nodes.append((u.name, data["hostname"], data["private-address"]))
 
             for rel in self.model.relations["workers"]:
-                for unit in rel.units:
-                    data = rel.data[unit]
-                    worker_nodes.append((data["hostname"], data["private-address"]))
+                for u in rel.units:
+                    data = rel.data[u]
+                    worker_nodes.append((u.name, data["hostname"], data["private-address"]))
         except KeyError:
             LOG.debug("missing relation information, will update scrape configs later")
             return
@@ -350,6 +354,13 @@ class MicroK8sCharm(CharmBase):
         scrape_configs = metrics.build_scrape_configs(token, control_plane_nodes, worker_nodes)
         for relation in self.model.relations["metrics"]:
             relation.data[self.app]["scrape_jobs"] = json.dumps(scrape_configs)
+            relation.data[self.app]["scrape_metadata"] = json.dumps(
+                {
+                    "model": self.model.name,
+                    "model_uuid": self.model.uuid,
+                    "application": self.app.name,
+                }
+            )
 
 
 if __name__ == "__main__":  # pragma: nocover

@@ -1,6 +1,7 @@
 #
 # Copyright 2023 Canonical, Ltd.
 #
+import json
 import subprocess
 from unittest import mock
 
@@ -283,14 +284,20 @@ def test_metrics_relation(e: Environment, is_leader: bool):
         e.metrics.get_bearer_token.reset_mock()
         e.metrics.build_scrape_configs.reset_mock()
 
-        assert e.harness.get_relation_data(metrics_rel_id, "microk8s") == {
-            "scrape_jobs": '{"fakekey": "fakevalue"}',
+        relation_data = e.harness.get_relation_data(metrics_rel_id, "microk8s")
+        assert json.loads(relation_data["scrape_jobs"]) == {"fakekey": "fakevalue"}
+        assert json.loads(relation_data["scrape_metadata"]) == {
+            "model": e.harness.model.name,
+            "model_uuid": e.harness.model.uuid,
+            "application": e.harness.charm.app.name,
         }
 
     metrics_rel_id = e.harness.add_relation("metrics", "prometheus")
     e.harness.add_relation_unit(metrics_rel_id, "prometheus/0")
 
-    helper_assert_calls("faketoken", [("fakehostname", "10.10.10.10")], [], apply_called=True)
+    helper_assert_calls(
+        "faketoken", [("microk8s/0", "fakehostname", "10.10.10.10")], [], apply_called=True
+    )
 
     # add peer control plane node
     peer_rel_id = e.harness.charm.model.get_relation("peer").id
@@ -299,7 +306,12 @@ def test_metrics_relation(e: Environment, is_leader: bool):
     e.harness.update_relation_data(peer_rel_id, "microk8s/1", {"hostname": "fakehostname2"})
 
     helper_assert_calls(
-        "faketoken", [("fakehostname", "10.10.10.10"), ("fakehostname2", "fakeaddr2")], []
+        "faketoken",
+        [
+            ("microk8s/0", "fakehostname", "10.10.10.10"),
+            ("microk8s/1", "fakehostname2", "fakeaddr2"),
+        ],
+        [],
     )
 
     # add worker node
@@ -311,19 +323,24 @@ def test_metrics_relation(e: Environment, is_leader: bool):
 
     helper_assert_calls(
         "faketoken",
-        [("fakehostname", "10.10.10.10"), ("fakehostname2", "fakeaddr2")],
-        [("fakehostname3", "fakeaddr2")],
+        [
+            ("microk8s/0", "fakehostname", "10.10.10.10"),
+            ("microk8s/1", "fakehostname2", "fakeaddr2"),
+        ],
+        [("microk8s-worker/0", "fakehostname3", "fakeaddr2")],
     )
 
     # remove control plane node
     e.harness.remove_relation_unit(peer_rel_id, "microk8s/1")
     helper_assert_calls(
-        "faketoken", [("fakehostname", "10.10.10.10")], [("fakehostname3", "fakeaddr2")]
+        "faketoken",
+        [("microk8s/0", "fakehostname", "10.10.10.10")],
+        [("microk8s-worker/0", "fakehostname3", "fakeaddr2")],
     )
 
     # remove worker node
     e.harness.remove_relation_unit(rel_id, "microk8s-worker/0")
-    helper_assert_calls("faketoken", [("fakehostname", "10.10.10.10")], [])
+    helper_assert_calls("faketoken", [("microk8s/0", "fakehostname", "10.10.10.10")], [])
 
     # failed to retrieve token
     if is_leader:
@@ -337,6 +354,6 @@ def test_metrics_relation(e: Environment, is_leader: bool):
         )
         e.metrics.get_bearer_token.assert_called_once_with()
         e.metrics.build_scrape_configs.assert_not_called()
-        assert e.harness.get_relation_data(metrics_rel_id, "microk8s") == {
-            "scrape_jobs": '{"fakekey": "fakevalue"}'
-        }
+
+        relation_data = e.harness.get_relation_data(metrics_rel_id, "microk8s")
+        assert json.loads(relation_data["scrape_jobs"]) == {"fakekey": "fakevalue"}
