@@ -8,6 +8,7 @@ import logging
 import config
 import pytest
 from conftest import microk8s_kubernetes_cloud_and_model
+from juju.application import Application
 from pytest_operator.plugin import OpsTest
 
 LOG = logging.getLogger(__name__)
@@ -45,5 +46,6 @@ async def test_observability_metrics(e: OpsTest):
             with e.model_context(k8s_model):
                 await e.model.wait_for_idle(["prometheus"])
         finally:
-            await e.model.remove_relation("microk8s", "prometheus")
+            app: Application = e.model.applications["microk8s"]
+            await app.remove_relation("metrics", "prometheus")
             await e.model.remove_saas("prometheus")
