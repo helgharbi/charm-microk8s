@@ -1,7 +1,6 @@
 #
 # Copyright 2023 Canonical, Ltd.
 #
-import json
 from unittest import mock
 
 import ops
@@ -267,41 +266,27 @@ def test_metrics_relation(e: Environment, is_leader: bool):
     metrics_rel_id = e.harness.add_relation("metrics", "prometheus")
     e.harness.add_relation_unit(metrics_rel_id, "prometheus/0")
 
-    assert e.harness.get_relation_data(metrics_rel_id, e.harness.charm.unit.name) == {
-        "prometheus_scrape_unit_address": "10.10.10.10",
-        "prometheus_scrape_unit_name": e.harness.charm.unit.name,
-    }
-
     peer_rel_id = e.harness.model.get_relation("peer").id
     peer_data = e.harness.get_relation_data(peer_rel_id, e.harness.charm.app.name)
-    metrics_data = e.harness.get_relation_data(metrics_rel_id, e.harness.charm.app.name)
     workers_data = e.harness.get_relation_data(worker_rel_id, e.harness.charm.app.name)
+
+    e.MetricsEndpointProvider.assert_called_once_with(
+        e.harness.charm,
+        "metrics",
+        refresh_event=mock.ANY,
+        lookaside_jobs_callable=e.harness.charm._build_scrape_jobs,
+    )
 
     if is_leader:
         e.metrics.apply_required_resources.assert_called_once_with()
         e.metrics.get_bearer_token.assert_called_once_with()
-        e.metrics.build_scrape_jobs.assert_called_once_with("faketoken", True)
-
-        assert metrics_data == {
-            "scrape_jobs": '{"fakekey": "fakevalue"}',
-            "scrape_metadata": json.dumps(
-                {
-                    "model": e.harness.model.name,
-                    "model_uuid": e.harness.model.uuid,
-                    "application": e.harness.charm.app.name,
-                    "unit": e.harness.charm.unit.name,
-                }
-            ),
-        }
 
         assert peer_data["metrics_token"] == "faketoken"
         assert workers_data["metrics_token"] == "faketoken"
     else:
         e.metrics.apply_required_resources.assert_not_called()
         e.metrics.get_bearer_token.assert_not_called()
-        e.metrics.build_scrape_jobs.assert_not_called()
 
-        assert metrics_data == {}
         assert workers_data == {}
         assert "metrics_token" not in peer_data
 

@@ -25,6 +25,7 @@ class Environment:
     metrics: mock.MagicMock
     microk8s: mock.MagicMock
     util: mock.MagicMock
+    MetricsEndpointProvider: mock.MagicMock
 
 
 @pytest.fixture
@@ -39,6 +40,7 @@ def e():
         "metrics": mock.patch("charm.metrics", autospec=True),
         "microk8s": mock.patch("charm.microk8s", autospec=True),
         "util": mock.patch("charm.util", autospec=True),
+        "MetricsEndpointProvider": mock.patch("charm.MetricsEndpointProvider", autospec=True),
     }
 
     mocks = {}

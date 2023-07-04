@@ -10,6 +10,7 @@ import subprocess
 import time
 from typing import Any, Union
 
+from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
 from ops import CharmBase, main
 from ops.charm import (
     ConfigChangedEvent,
@@ -60,26 +61,37 @@ class MicroK8sCharm(CharmBase):
         )
 
         if self.config["role"] == "worker":
+            # lifecycle
             self.framework.observe(self.on.remove, self.on_remove)
             self.framework.observe(self.on.upgrade_charm, self.on_upgrade)
             self.framework.observe(self.on.install, self.on_install)
             self.framework.observe(self.on.update_status, self.update_status)
+
+            # configuration
             self.framework.observe(self.on.config_changed, self.config_ensure_role)
             self.framework.observe(self.on.config_changed, self.on_install)
             self.framework.observe(self.on.config_changed, self.config_containerd_proxy)
             self.framework.observe(self.on.config_changed, self.config_containerd_registries)
             self.framework.observe(self.on.config_changed, self.update_status)
+
+            # clustering
             self.framework.observe(self.on.control_plane_relation_joined, self.on_install)
             self.framework.observe(self.on.control_plane_relation_joined, self.announce_hostname)
-            self.framework.observe(self.on.control_plane_relation_joined, self.update_scrape_jobs)
             self.framework.observe(self.on.control_plane_relation_changed, self.join_cluster)
             self.framework.observe(self.on.control_plane_relation_changed, self.update_status)
-            self.framework.observe(self.on.control_plane_relation_changed, self.update_scrape_jobs)
             self.framework.observe(self.on.control_plane_relation_broken, self.leave_cluster)
             self.framework.observe(self.on.control_plane_relation_broken, self.update_status)
-            self.framework.observe(self.on.metrics_relation_joined, self.announce_metrics_endpoints)
-            self.framework.observe(self.on.metrics_relation_joined, self.update_scrape_jobs)
-            self.framework.observe(self.on.metrics_relation_changed, self.update_scrape_jobs)
+
+            # observability
+            self._metrics = MetricsEndpointProvider(
+                self,
+                "metrics",
+                refresh_event=[
+                    self.on.control_plane_relation_joined,
+                    self.on.control_plane_relation_changed,
+                ],
+                lookaside_jobs_callable=self._build_scrape_jobs,
+            )
         else:
             # lifecycle
             self.framework.observe(self.on.remove, self.on_remove)
@@ -113,7 +125,6 @@ class MicroK8sCharm(CharmBase):
             self.framework.observe(self.on.peer_relation_changed, self.join_cluster)
             self.framework.observe(self.on.peer_relation_changed, self.config_extra_sans)
             self.framework.observe(self.on.peer_relation_changed, self.update_status)
-            self.framework.observe(self.on.peer_relation_changed, self.update_scrape_jobs)
             self.framework.observe(self.on.peer_relation_departed, self.on_relation_departed)
             self.framework.observe(self.on.peer_relation_departed, self.remove_departed_nodes)
             self.framework.observe(self.on.peer_relation_departed, self.update_status)
@@ -128,11 +139,13 @@ class MicroK8sCharm(CharmBase):
             self.framework.observe(
                 self.on.metrics_relation_joined, self.apply_observability_resources
             )
-            self.framework.observe(self.on.metrics_relation_joined, self.announce_metrics_endpoints)
             self.framework.observe(self.on.metrics_relation_joined, self.update_scrape_token)
-            self.framework.observe(self.on.metrics_relation_joined, self.update_scrape_jobs)
-            self.framework.observe(self.on.metrics_relation_changed, self.update_scrape_token)
-            self.framework.observe(self.on.metrics_relation_changed, self.update_scrape_jobs)
+            self._metrics = MetricsEndpointProvider(
+                self,
+                "metrics",
+                refresh_event=self.on.peer_relation_changed,
+                lookaside_jobs_callable=self._build_scrape_jobs,
+            )
 
     def on_remove(self, _: RemoveEvent):
         try:
@@ -338,9 +351,9 @@ class MicroK8sCharm(CharmBase):
         for relation in self.model.relations["workers"]:
             relation.data[self.app]["metrics_token"] = token
 
-    def update_scrape_jobs(self, _: Union[RelationJoinedEvent, RelationChangedEvent]):
-        if not self.unit.is_leader() or not self.model.relations["metrics"]:
-            return
+    def _build_scrape_jobs(self):
+        if isinstance(self.unit.status, BlockedStatus) or not self._state.joined:
+            return []
 
         is_control_plane = self.config["role"] != "worker"
         control_relation_name = "peer" if is_control_plane else "control-plane"
@@ -350,24 +363,9 @@ class MicroK8sCharm(CharmBase):
             token = relation.data[relation.app]["metrics_token"]
         except (KeyError, AttributeError):
             LOG.debug("metrics token not yet available")
-            return
+            return []
 
-        for metrics_relation in self.model.relations["metrics"]:
-            jobs = metrics.build_scrape_jobs(token, is_control_plane)
-            metrics_relation.data[self.app]["scrape_jobs"] = json.dumps(jobs)
-            metrics_relation.data[self.app]["scrape_metadata"] = json.dumps(
-                {
-                    "model": self.model.name,
-                    "model_uuid": self.model.uuid,
-                    "application": self.app.name,
-                    "unit": self.unit.name,
-                }
-            )
-
-    def announce_metrics_endpoints(self, event: RelationJoinedEvent):
-        address = self.model.get_binding(event.relation).network.ingress_address
-        event.relation.data[self.unit]["prometheus_scrape_unit_address"] = str(address)
-        event.relation.data[self.unit]["prometheus_scrape_unit_name"] = self.unit.name
+        return metrics.build_scrape_jobs(token, is_control_plane)
 
 
 if __name__ == "__main__":  # pragma: nocover
