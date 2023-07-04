@@ -2,6 +2,8 @@
 # Copyright 2023 Canonical, Ltd.
 #
 
+import json
+
 import ops
 import ops.testing
 import pytest
@@ -109,3 +111,61 @@ def test_control_plane_relation_departed(e: Environment, is_leader: bool):
     e.microk8s.uninstall.assert_not_called()
 
     assert unit.status == ops.model.ActiveStatus("fakestatus")
+
+
+@pytest.mark.parametrize("is_leader", (True, False))
+def test_metrics_relation(e: Environment, is_leader: bool):
+    e.microk8s.get_unit_status.return_value = ops.model.ActiveStatus("fakestatus")
+    e.gethostname.return_value = "fakehostname"
+    e.metrics.build_scrape_jobs.return_value = {"fakekey": "fakevalue"}
+    e.metrics.get_bearer_token.return_value = "faketoken"
+
+    e.harness.add_network("10.10.10.10")
+    e.harness.update_config({"role": "worker"})
+    e.harness.set_leader(True)
+    e.harness.begin_with_initial_hooks()
+
+    e.harness.set_leader(is_leader)
+
+    e.metrics.apply_required_resources.assert_not_called()
+    e.metrics.get_bearer_token.assert_not_called()
+    e.metrics.build_scrape_jobs.assert_not_called()
+
+    worker_rel_id = e.harness.add_relation("control-plane", "microk8s-cp")
+    e.harness.add_relation_unit(worker_rel_id, "microk8s-cp/0")
+
+    metrics_rel_id = e.harness.add_relation("metrics", "prometheus")
+    e.harness.add_relation_unit(metrics_rel_id, "prometheus/0")
+
+    assert e.harness.get_relation_data(metrics_rel_id, e.harness.charm.unit.name) == {
+        "prometheus_scrape_unit_address": "10.10.10.10",
+        "prometheus_scrape_unit_name": e.harness.charm.unit.name,
+    }
+
+    metrics_data = e.harness.get_relation_data(metrics_rel_id, e.harness.charm.app.name)
+
+    e.metrics.apply_required_resources.assert_not_called()
+    e.metrics.get_bearer_token.assert_not_called()
+    e.metrics.build_scrape_jobs.assert_not_called()
+
+    e.harness.update_relation_data(worker_rel_id, "microk8s-cp", {"metrics_token": "faketoken"})
+
+    if is_leader:
+        e.metrics.build_scrape_jobs.assert_called_once_with("faketoken", False)
+
+        assert metrics_data == {
+            "scrape_jobs": '{"fakekey": "fakevalue"}',
+            "scrape_metadata": json.dumps(
+                {
+                    "model": e.harness.model.name,
+                    "model_uuid": e.harness.model.uuid,
+                    "application": e.harness.charm.app.name,
+                    "unit": e.harness.charm.unit.name,
+                }
+            ),
+        }
+
+    else:
+        e.metrics.build_scrape_jobs.assert_not_called()
+
+        assert metrics_data == {}

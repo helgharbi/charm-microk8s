@@ -2,7 +2,6 @@
 # Copyright 2023 Canonical, Ltd.
 #
 import json
-import subprocess
 from unittest import mock
 
 import ops
@@ -248,7 +247,7 @@ def test_follower_become_leader_remove_already_departed_nodes(e: Environment, be
 def test_metrics_relation(e: Environment, is_leader: bool):
     e.microk8s.get_unit_status.return_value = ops.model.ActiveStatus("fakestatus")
     e.gethostname.return_value = "fakehostname"
-    e.metrics.build_scrape_configs.return_value = {"fakekey": "fakevalue"}
+    e.metrics.build_scrape_jobs.return_value = {"fakekey": "fakevalue"}
     e.metrics.get_bearer_token.return_value = "faketoken"
 
     e.harness.add_network("10.10.10.10")
@@ -260,100 +259,63 @@ def test_metrics_relation(e: Environment, is_leader: bool):
 
     e.metrics.apply_required_resources.assert_not_called()
     e.metrics.get_bearer_token.assert_not_called()
-    e.metrics.build_scrape_configs.assert_not_called()
+    e.metrics.build_scrape_jobs.assert_not_called()
 
-    def helper_assert_calls(*args, apply_called=False):
-        """helper method for less repetition"""
-        if not is_leader:
-            e.metrics.apply_required_resources.assert_not_called()
-            e.metrics.get_bearer_token.assert_not_called()
-            e.metrics.build_scrape_configs.assert_not_called()
-            assert e.harness.charm.model.get_relation("metrics").data.get("microk8s") is None
-
-            return
-
-        if apply_called:
-            e.metrics.apply_required_resources.assert_called_once_with()
-        else:
-            e.metrics.apply_required_resources.assert_not_called()
-
-        e.metrics.get_bearer_token.assert_called_once_with()
-        e.metrics.build_scrape_configs.assert_called_once_with(*args)
-
-        e.metrics.apply_required_resources.reset_mock()
-        e.metrics.get_bearer_token.reset_mock()
-        e.metrics.build_scrape_configs.reset_mock()
-
-        relation_data = e.harness.get_relation_data(metrics_rel_id, "microk8s")
-        assert json.loads(relation_data["scrape_jobs"]) == {"fakekey": "fakevalue"}
-        assert json.loads(relation_data["scrape_metadata"]) == {
-            "model": e.harness.model.name,
-            "model_uuid": e.harness.model.uuid,
-            "application": e.harness.charm.app.name,
-        }
+    worker_rel_id = e.harness.add_relation("workers", "microk8s-worker")
+    e.harness.add_relation_unit(worker_rel_id, "microk8s-worker/0")
 
     metrics_rel_id = e.harness.add_relation("metrics", "prometheus")
     e.harness.add_relation_unit(metrics_rel_id, "prometheus/0")
 
-    helper_assert_calls(
-        "faketoken", [("microk8s/0", "fakehostname", "10.10.10.10")], [], apply_called=True
-    )
+    assert e.harness.get_relation_data(metrics_rel_id, e.harness.charm.unit.name) == {
+        "prometheus_scrape_unit_address": "10.10.10.10",
+        "prometheus_scrape_unit_name": e.harness.charm.unit.name,
+    }
 
-    # add peer control plane node
-    peer_rel_id = e.harness.charm.model.get_relation("peer").id
-    e.harness.add_relation_unit(peer_rel_id, "microk8s/1")
-    e.harness.update_relation_data(peer_rel_id, "microk8s/1", {"private-address": "fakeaddr2"})
-    e.harness.update_relation_data(peer_rel_id, "microk8s/1", {"hostname": "fakehostname2"})
+    peer_rel_id = e.harness.model.get_relation("peer").id
+    peer_data = e.harness.get_relation_data(peer_rel_id, e.harness.charm.app.name)
+    metrics_data = e.harness.get_relation_data(metrics_rel_id, e.harness.charm.app.name)
+    workers_data = e.harness.get_relation_data(worker_rel_id, e.harness.charm.app.name)
 
-    helper_assert_calls(
-        "faketoken",
-        [
-            ("microk8s/0", "fakehostname", "10.10.10.10"),
-            ("microk8s/1", "fakehostname2", "fakeaddr2"),
-        ],
-        [],
-    )
-
-    # add worker node
-    rel_id = e.harness.add_relation("workers", "microk8s-worker")
-    e.harness.add_relation_unit(rel_id, "microk8s-worker/0")
-    e.harness.update_relation_data(
-        rel_id, "microk8s-worker/0", {"hostname": "fakehostname3", "private-address": "fakeaddr2"}
-    )
-
-    helper_assert_calls(
-        "faketoken",
-        [
-            ("microk8s/0", "fakehostname", "10.10.10.10"),
-            ("microk8s/1", "fakehostname2", "fakeaddr2"),
-        ],
-        [("microk8s-worker/0", "fakehostname3", "fakeaddr2")],
-    )
-
-    # remove control plane node
-    e.harness.remove_relation_unit(peer_rel_id, "microk8s/1")
-    helper_assert_calls(
-        "faketoken",
-        [("microk8s/0", "fakehostname", "10.10.10.10")],
-        [("microk8s-worker/0", "fakehostname3", "fakeaddr2")],
-    )
-
-    # remove worker node
-    e.harness.remove_relation_unit(rel_id, "microk8s-worker/0")
-    helper_assert_calls("faketoken", [("microk8s/0", "fakehostname", "10.10.10.10")], [])
-
-    # failed to retrieve token
     if is_leader:
-        e.metrics.build_scrape_configs.return_value = {"fakekey2": "fakevalue2"}
-        e.metrics.get_bearer_token.side_effect = subprocess.CalledProcessError("cmd", 1)
-        e.harness.add_relation_unit(rel_id, "microk8s-worker/0")
-        e.harness.update_relation_data(
-            rel_id,
-            "microk8s-worker/0",
-            {"hostname": "fakehostname3", "private-address": "fakeaddr2"},
-        )
+        e.metrics.apply_required_resources.assert_called_once_with()
         e.metrics.get_bearer_token.assert_called_once_with()
-        e.metrics.build_scrape_configs.assert_not_called()
+        e.metrics.build_scrape_jobs.assert_called_once_with("faketoken", True)
 
-        relation_data = e.harness.get_relation_data(metrics_rel_id, "microk8s")
-        assert json.loads(relation_data["scrape_jobs"]) == {"fakekey": "fakevalue"}
+        assert metrics_data == {
+            "scrape_jobs": '{"fakekey": "fakevalue"}',
+            "scrape_metadata": json.dumps(
+                {
+                    "model": e.harness.model.name,
+                    "model_uuid": e.harness.model.uuid,
+                    "application": e.harness.charm.app.name,
+                    "unit": e.harness.charm.unit.name,
+                }
+            ),
+        }
+
+        assert peer_data["metrics_token"] == "faketoken"
+        assert workers_data["metrics_token"] == "faketoken"
+    else:
+        e.metrics.apply_required_resources.assert_not_called()
+        e.metrics.get_bearer_token.assert_not_called()
+        e.metrics.build_scrape_jobs.assert_not_called()
+
+        assert metrics_data == {}
+        assert workers_data == {}
+        assert "metrics_token" not in peer_data
+
+    e.metrics.apply_required_resources.reset_mock()
+    e.metrics.get_bearer_token.reset_mock()
+    e.metrics.build_scrape_jobs.reset_mock()
+
+    e.metrics.get_bearer_token.return_value = "faketoken2"
+
+    e.harness.charm.on.update_status.emit()
+    e.metrics.apply_required_resources.assert_not_called()
+    if is_leader:
+        e.metrics.get_bearer_token.assert_called_once_with()
+        assert peer_data["metrics_token"] == "faketoken2"
+        assert workers_data["metrics_token"] == "faketoken2"
+    else:
+        e.metrics.get_bearer_token.assert_not_called()

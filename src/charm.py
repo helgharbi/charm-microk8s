@@ -71,10 +71,15 @@ class MicroK8sCharm(CharmBase):
             self.framework.observe(self.on.config_changed, self.update_status)
             self.framework.observe(self.on.control_plane_relation_joined, self.on_install)
             self.framework.observe(self.on.control_plane_relation_joined, self.announce_hostname)
+            self.framework.observe(self.on.control_plane_relation_joined, self.update_scrape_jobs)
             self.framework.observe(self.on.control_plane_relation_changed, self.join_cluster)
             self.framework.observe(self.on.control_plane_relation_changed, self.update_status)
+            self.framework.observe(self.on.control_plane_relation_changed, self.update_scrape_jobs)
             self.framework.observe(self.on.control_plane_relation_broken, self.leave_cluster)
             self.framework.observe(self.on.control_plane_relation_broken, self.update_status)
+            self.framework.observe(self.on.metrics_relation_joined, self.announce_metrics_endpoints)
+            self.framework.observe(self.on.metrics_relation_joined, self.update_scrape_jobs)
+            self.framework.observe(self.on.metrics_relation_changed, self.update_scrape_jobs)
         else:
             # lifecycle
             self.framework.observe(self.on.remove, self.on_remove)
@@ -84,9 +89,8 @@ class MicroK8sCharm(CharmBase):
             self.framework.observe(self.on.install, self.open_ports)
             self.framework.observe(self.on.leader_elected, self.remove_departed_nodes)
             self.framework.observe(self.on.leader_elected, self.update_status)
-            self.framework.observe(self.on.leader_elected, self.update_scrape_configs)
             self.framework.observe(self.on.update_status, self.update_status)
-            self.framework.observe(self.on.update_status, self.update_scrape_configs)
+            self.framework.observe(self.on.update_status, self.update_scrape_token)
 
             # configuration
             self.framework.observe(self.on.config_changed, self.config_ensure_role)
@@ -109,13 +113,13 @@ class MicroK8sCharm(CharmBase):
             self.framework.observe(self.on.peer_relation_changed, self.join_cluster)
             self.framework.observe(self.on.peer_relation_changed, self.config_extra_sans)
             self.framework.observe(self.on.peer_relation_changed, self.update_status)
-            self.framework.observe(self.on.peer_relation_changed, self.update_scrape_configs)
+            self.framework.observe(self.on.peer_relation_changed, self.update_scrape_jobs)
             self.framework.observe(self.on.peer_relation_departed, self.on_relation_departed)
             self.framework.observe(self.on.peer_relation_departed, self.remove_departed_nodes)
             self.framework.observe(self.on.peer_relation_departed, self.update_status)
             self.framework.observe(self.on.workers_relation_joined, self.add_node)
+            self.framework.observe(self.on.workers_relation_joined, self.update_scrape_token)
             self.framework.observe(self.on.workers_relation_changed, self.record_hostnames)
-            self.framework.observe(self.on.workers_relation_changed, self.update_scrape_configs)
             self.framework.observe(self.on.workers_relation_departed, self.on_relation_departed)
             self.framework.observe(self.on.workers_relation_departed, self.remove_departed_nodes)
             self.framework.observe(self.on.workers_relation_departed, self.update_status)
@@ -124,8 +128,11 @@ class MicroK8sCharm(CharmBase):
             self.framework.observe(
                 self.on.metrics_relation_joined, self.apply_observability_resources
             )
-            self.framework.observe(self.on.metrics_relation_joined, self.update_scrape_configs)
-            self.framework.observe(self.on.metrics_relation_changed, self.update_scrape_configs)
+            self.framework.observe(self.on.metrics_relation_joined, self.announce_metrics_endpoints)
+            self.framework.observe(self.on.metrics_relation_joined, self.update_scrape_token)
+            self.framework.observe(self.on.metrics_relation_joined, self.update_scrape_jobs)
+            self.framework.observe(self.on.metrics_relation_changed, self.update_scrape_token)
+            self.framework.observe(self.on.metrics_relation_changed, self.update_scrape_jobs)
 
     def on_remove(self, _: RemoveEvent):
         try:
@@ -242,9 +249,6 @@ class MicroK8sCharm(CharmBase):
             remove_nodes.append(remove_hostname)
             self._set_peer_data("remove_nodes", remove_nodes)
 
-        # must update scrape configs
-        self.update_scrape_configs(None)
-
     def remove_departed_nodes(self, _: Union[RelationDepartedEvent, LeaderElectedEvent]):
         if self._state.joined and self.unit.is_leader():
             remove_nodes = self._get_peer_data("remove_nodes", [])
@@ -319,30 +323,8 @@ class MicroK8sCharm(CharmBase):
         if self._state.joined and self.unit.is_leader():
             metrics.apply_required_resources()
 
-    def update_scrape_configs(self, _: Any):
+    def update_scrape_token(self, _: Any):
         if not self.unit.is_leader() or not self.model.relations["metrics"]:
-            return
-
-        control_plane_nodes = [
-            (
-                self.unit.name,
-                socket.gethostname(),
-                str(self.model.get_binding("metrics").network.ingress_address),
-            )
-        ]
-        worker_nodes = []
-        try:
-            for rel in self.model.relations["peer"]:
-                for u in rel.units:
-                    data = rel.data[u]
-                    control_plane_nodes.append((u.name, data["hostname"], data["private-address"]))
-
-            for rel in self.model.relations["workers"]:
-                for u in rel.units:
-                    data = rel.data[u]
-                    worker_nodes.append((u.name, data["hostname"], data["private-address"]))
-        except KeyError:
-            LOG.debug("missing relation information, will update scrape configs later")
             return
 
         try:
@@ -351,16 +333,41 @@ class MicroK8sCharm(CharmBase):
             LOG.exception("failed to retrieve authentication token for observability")
             return
 
-        scrape_configs = metrics.build_scrape_configs(token, control_plane_nodes, worker_nodes)
-        for relation in self.model.relations["metrics"]:
-            relation.data[self.app]["scrape_jobs"] = json.dumps(scrape_configs)
-            relation.data[self.app]["scrape_metadata"] = json.dumps(
+        for relation in self.model.relations["peer"]:
+            relation.data[self.app]["metrics_token"] = token
+        for relation in self.model.relations["workers"]:
+            relation.data[self.app]["metrics_token"] = token
+
+    def update_scrape_jobs(self, _: Union[RelationJoinedEvent, RelationChangedEvent]):
+        if not self.unit.is_leader() or not self.model.relations["metrics"]:
+            return
+
+        is_control_plane = self.config["role"] != "worker"
+        control_relation_name = "peer" if is_control_plane else "control-plane"
+        relation = self.model.get_relation(control_relation_name)
+
+        try:
+            token = relation.data[relation.app]["metrics_token"]
+        except (KeyError, AttributeError):
+            LOG.debug("metrics token not yet available")
+            return
+
+        for metrics_relation in self.model.relations["metrics"]:
+            jobs = metrics.build_scrape_jobs(token, is_control_plane)
+            metrics_relation.data[self.app]["scrape_jobs"] = json.dumps(jobs)
+            metrics_relation.data[self.app]["scrape_metadata"] = json.dumps(
                 {
                     "model": self.model.name,
                     "model_uuid": self.model.uuid,
                     "application": self.app.name,
+                    "unit": self.unit.name,
                 }
             )
+
+    def announce_metrics_endpoints(self, event: RelationJoinedEvent):
+        address = self.model.get_binding(event.relation).network.ingress_address
+        event.relation.data[self.unit]["prometheus_scrape_unit_address"] = str(address)
+        event.relation.data[self.unit]["prometheus_scrape_unit_name"] = self.unit.name
 
 
 if __name__ == "__main__":  # pragma: nocover

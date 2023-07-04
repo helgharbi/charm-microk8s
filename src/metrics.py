@@ -63,25 +63,8 @@ def get_bearer_token():
     return p.stdout.decode().strip()
 
 
-def build_scrape_configs(token, control_plane_nodes, worker_nodes):
-    """
-    needs
-    token = 'token with permissions above'
-    control_plane_nodes = ((unit, hostname, ip), (unit2, hostname2, ip2), ...)
-    worker_nodes = ((unit, hostname, ip), (unit2, hostname2, ip2), ...)
-    """
-
-    scrape_configs = []
-
-    apiserver_targets = [
-        {"targets": [f"{address}:16443"], "labels": {"juju_unit": unit}}
-        for (unit, _, address) in control_plane_nodes
-    ]
-    kubelet_targets = [
-        {"targets": [f"{address}:10250"], "labels": {"juju_unit": unit, "node": hostname}}
-        for (unit, hostname, address) in control_plane_nodes + worker_nodes
-    ]
-
+def build_scrape_jobs(token: str, control_plane: bool):
+    """build scrape jobs for worker nodes (kubelet and kube-proxy)"""
     base_job = {
         "scheme": "https",
         "tls_config": {
@@ -92,21 +75,29 @@ def build_scrape_configs(token, control_plane_nodes, worker_nodes):
         },
     }
 
-    # apiserver, kube-scheduler, kube-controller-manager, kube-proxy
-    for job_name, targets in [
-        ("apiserver", apiserver_targets),
-        ("kube-scheduler", apiserver_targets),
-        ("kube-controller-manager", apiserver_targets),
-        ("kube-proxy", kubelet_targets),
-    ]:
-        scrape_configs.append(
-            {
-                **base_job,
-                "job_name": job_name,
-                "static_configs": targets,
-                "relabel_configs": [{"target_label": "job", "replacement": job_name}],
-            }
-        )
+    scrape_jobs = []
+
+    if control_plane:
+        # apiserver, kube-scheduler, kube-controller-manager
+        for job_name in ["apiserver", "kube-scheduler", "kube-controller-manager"]:
+            scrape_jobs.append(
+                {
+                    **base_job,
+                    "job_name": job_name,
+                    "static_configs": [{"targets": ["*:16443"]}],
+                    "relabel_configs": [{"target_label": "job", "replacement": job_name}],
+                }
+            )
+
+    # kube-proxy
+    scrape_jobs.append(
+        {
+            **base_job,
+            "job_name": "kube-proxy",
+            "static_configs": [{"targets": ["*:10250"]}],
+            "relabel_configs": [{"target_label": "job", "replacement": "kube-proxy"}],
+        }
+    )
 
     # kubelet
     for job_name, metrics_path in (
@@ -114,17 +105,23 @@ def build_scrape_configs(token, control_plane_nodes, worker_nodes):
         ("kubelet-cadvisor", "/metrics/cadvisor"),
         ("kubelet-probes", "/metrics/probes"),
     ):
-        scrape_configs.append(
+        scrape_jobs.append(
             {
                 **base_job,
                 "job_name": job_name,
                 "metrics_path": metrics_path,
-                "static_configs": kubelet_targets,
+                "static_configs": [{"targets": ["*:10250"]}],
                 "relabel_configs": [
                     {"target_label": "metrics_path", "replacement": metrics_path},
                     {"target_label": "job", "replacement": "kubelet"},
+                    {
+                        "target_label": "node",
+                        "source_labels": ["juju_unit"],
+                        "regex": "(.*)",
+                        "replacement": "${1}",
+                    },
                 ],
             }
         )
 
-    return scrape_configs
+    return scrape_jobs
