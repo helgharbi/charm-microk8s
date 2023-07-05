@@ -12,12 +12,13 @@ import metrics
 @mock.patch("util.ensure_call")
 @mock.patch("util.charm_dir")
 def test_apply_required_resources(charm_dir: mock.MagicMock, ensure_call: mock.MagicMock):
-    charm_dir.return_value = Path("some/dir")
+    charm_dir.return_value = Path("dir")
     metrics.apply_required_resources()
 
-    ensure_call.assert_called_once_with(
-        ["microk8s", "kubectl", "apply", "-f", "some/dir/manifests/metrics.yaml"]
-    )
+    assert ensure_call.mock_calls == [
+        mock.call(["microk8s", "kubectl", "apply", "-f", "dir/manifests/metrics.yaml"]),
+        mock.call(["microk8s", "kubectl", "apply", "-f", "dir/manifests/kube-state-metrics.yaml"]),
+    ]
 
 
 @mock.patch("util.ensure_call")
@@ -137,6 +138,17 @@ def test_get_bearer_token(ensure_call: mock.MagicMock):
                     "static_configs": [{"targets": ["*:16443"]}],
                     "relabel_configs": [
                         {"target_label": "job", "replacement": "kube-controller-manager"}
+                    ],
+                },
+                {
+                    "scheme": "https",
+                    "tls_config": {"insecure_skip_verify": True},
+                    "authorization": {"credentials": "faketoken"},
+                    "job_name": "kube-state-metrics",
+                    "static_configs": [{"targets": ["*:16443"]}],
+                    "metrics_path": "/api/v1/namespaces/kube-system/services/kube-state-metrics:http-metrics/proxy/metrics",  # noqa
+                    "relabel_configs": [
+                        {"target_label": "job", "replacement": "kube-state-metrics"}
                     ],
                 },
                 {

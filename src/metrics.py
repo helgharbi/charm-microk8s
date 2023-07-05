@@ -42,8 +42,9 @@ import util
 
 def apply_required_resources():
     """kubectl apply manifests that create the required roles and RBAC rules for observability"""
-    path = util.charm_dir() / "manifests" / "metrics.yaml"
-    util.ensure_call(["microk8s", "kubectl", "apply", "-f", path.as_posix()])
+    for file in ["metrics.yaml", "kube-state-metrics.yaml"]:
+        path = util.charm_dir() / "manifests" / file
+        util.ensure_call(["microk8s", "kubectl", "apply", "-f", path.as_posix()])
 
 
 def get_bearer_token():
@@ -88,6 +89,17 @@ def build_scrape_jobs(token: str, control_plane: bool):
                     "relabel_configs": [{"target_label": "job", "replacement": job_name}],
                 }
             )
+
+        # kube-state-metrics
+        scrape_jobs.append(
+            {
+                **base_job,
+                "job_name": "kube-state-metrics",
+                "metrics_path": "/api/v1/namespaces/kube-system/services/kube-state-metrics:http-metrics/proxy/metrics",  # noqa
+                "relabel_configs": [{"target_label": "job", "replacement": "kube-state-metrics"}],
+                "static_configs": [{"targets": ["*:16443"]}],
+            }
+        )
 
     # kube-proxy
     scrape_jobs.append(

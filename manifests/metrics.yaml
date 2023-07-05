@@ -25,12 +25,41 @@ rules:
   - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: microk8s-observability
+  namespace: kube-system
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - services/proxy
+  resourceNames:
+  - kube-state-metrics:http-metrics
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: microk8s-observability
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
+  name: microk8s-observability
+subjects:
+- kind: ServiceAccount
+  name: microk8s-observability
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: microk8s-observability
+  namespace: kube-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
   name: microk8s-observability
 subjects:
 - kind: ServiceAccount
